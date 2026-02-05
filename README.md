@@ -1,6 +1,10 @@
 # scripts
 
-A collection of lightweight, practical tools and automation scripts developed by **vhxubo**. These scripts solve everyday problems with minimal dependencies and focused functionality.
+A collection of lightweight, practical tools and automation scripts developed under the guidance of **vhxubo**. These scripts solve everyday problems with minimal dependencies and focused functionality.
+
+## 🤖 AI-Assisted Development
+
+This project was developed with AI assistance.
 
 ## 🎯 Purpose
 
