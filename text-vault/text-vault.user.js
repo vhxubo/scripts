@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         文本暂存匣 · 选中即记、一键回填
 // @namespace    https://vhxubo.local/textvault
-// @version      1.0.0
-// @description  文本片段的跨页面暂存与回填：选中文字后点浮出的「✚ 记」按钮（或油猴菜单 / Alt+Shift+V）把文本存进油猴存储，全站共享；悬浮球打开面板，点击条目——页面里有聚焦的输入框就插入光标处，没有就复制到剪贴板；无选中文本时记录命令自动改读剪贴板；支持编辑、删除（可撤销）、置顶、搜索、去重置顶，悬浮球可拖动、多标签页实时同步。
+// @version      1.1.0
+// @description  文本片段的跨页面暂存与回填：选中文字后点浮出的「✚ 记」按钮（或油猴菜单 / Alt+Shift+V）把文本存进油猴存储，全站共享；悬浮球打开面板，点击条目——页面里有聚焦的输入框就插入光标处，没有就复制到剪贴板；无选中文本时记录命令自动改读剪贴板；支持编辑、删除（可撤销）、置顶、搜索、去重置顶；悬浮球与面板均可拖动并记忆位置（双击面板标题栏重置），多标签页实时同步。
 // @author       vhxubo
 // @match        *://*/*
 // @match        file:///*
@@ -22,6 +22,7 @@
   /* ==================== 配置 ==================== */
   const STORE_KEY = 'textVaultEntries';
   const POS_KEY = 'textVaultFabPos';
+  const PANEL_POS_KEY = 'textVaultPanelPos';
   const MAX_ENTRIES = 1000;     // 条目上限，超出时优先淘汰最旧的未置顶条目
   const MAX_TEXT_LEN = 20000;   // 单条文本上限，超出截断
   const DEDUPE = true;          // 记录重复文本时不新增，改为置顶并刷新时间
@@ -275,7 +276,10 @@ button, input, textarea { font: inherit; color: inherit; }
 .panel-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 9px 12px; border-bottom: 1px solid var(--border); font-weight: 600;
+  cursor: grab; user-select: none; touch-action: none;
 }
+.panel-head:active { cursor: grabbing; }
+.panel-head button { cursor: pointer; touch-action: auto; }
 .panel-head .cnt { color: var(--muted); font-weight: 400; font-size: 12px; }
 .head-actions { display: flex; gap: 2px; }
 .icon-btn {
@@ -358,7 +362,7 @@ button, input, textarea { font: inherit; color: inherit; }
 <button class="fab" title="文本暂存匣 — 拖动移动 · 点击开关面板（Alt+Shift+V）"><span class="num">0</span></button>
 <button class="snap" hidden>✚ 记</button>
 <div class="panel" hidden>
-  <div class="panel-head">
+  <div class="panel-head" title="拖动移动面板 · 双击重置回悬浮球旁">
     <span>文本暂存匣 <span class="cnt"></span></span>
     <span class="head-actions">
       <button class="icon-btn act-add" title="新增一条">＋</button>
@@ -512,7 +516,7 @@ button, input, textarea { font: inherit; color: inherit; }
   function openPanel() {
     panelVisible = true;
     panelEl.hidden = false;
-    positionPanel();
+    if (!applyPanelPos()) positionPanel();
     render();
   }
   function closePanel() {
@@ -521,11 +525,38 @@ button, input, textarea { font: inherit; color: inherit; }
     snapEl.hidden = true;
   }
   function positionPanel() {
+    panelEl.style.left = 'auto';
+    panelEl.style.top = 'auto';
     const fr = fabEl.getBoundingClientRect();
     const ph = panelEl.offsetHeight || 400;
     panelEl.style.right = Math.max(8, Math.min(innerWidth - fr.right, innerWidth - 356)) + 'px';
     const above = innerHeight - fr.top + 8;
     panelEl.style.bottom = Math.max(8, Math.min(above, innerHeight - ph - 8)) + 'px';
+  }
+  // 有拖动记忆的位置则应用（clamp 进视口），返回是否命中记忆
+  function applyPanelPos() {
+    try {
+      const p = JSON.parse(GM_getValue(PANEL_POS_KEY, 'null'));
+      if (p && typeof p.left === 'number' && typeof p.top === 'number') {
+        const w = panelEl.offsetWidth || 340;
+        const h = panelEl.offsetHeight || 400;
+        panelEl.style.left = Math.max(4, Math.min(p.left, innerWidth - w - 4)) + 'px';
+        panelEl.style.top = Math.max(4, Math.min(p.top, innerHeight - h - 4)) + 'px';
+        panelEl.style.right = 'auto';
+        panelEl.style.bottom = 'auto';
+        return true;
+      }
+    } catch { /* 忽略损坏的位置数据 */ }
+    return false;
+  }
+  function savePanelPos() {
+    const r = panelEl.getBoundingClientRect();
+    GM_setValue(PANEL_POS_KEY, JSON.stringify({ left: Math.round(r.left), top: Math.round(r.top) }));
+  }
+  function resetPanelPos() {
+    GM_setValue(PANEL_POS_KEY, '');
+    positionPanel();
+    toast('面板位置已重置');
   }
 
   /* ---------- 悬浮球拖动 ---------- */
@@ -580,6 +611,37 @@ button, input, textarea { font: inherit; color: inherit; }
     root.querySelector('.act-add').addEventListener('click', openComposer);
     root.querySelector('.act-close').addEventListener('click', closePanel);
     searchEl.addEventListener('input', render);
+
+    // 拖动面板（标题栏为手柄），双击标题栏重置位置
+    const head = root.querySelector('.panel-head');
+    let pd = null;
+    head.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || e.target.closest('button')) return;
+      const r = panelEl.getBoundingClientRect();
+      pd = { x: e.clientX, y: e.clientY, left: r.left, top: r.top, moved: false };
+      head.setPointerCapture(e.pointerId);
+    });
+    head.addEventListener('pointermove', (e) => {
+      if (!pd) return;
+      if (!pd.moved && Math.hypot(e.clientX - pd.x, e.clientY - pd.y) < 5) return;
+      pd.moved = true;
+      const w = panelEl.offsetWidth;
+      const h = panelEl.offsetHeight;
+      panelEl.style.left = Math.max(4, Math.min(pd.left + e.clientX - pd.x, innerWidth - w - 4)) + 'px';
+      panelEl.style.top = Math.max(4, Math.min(pd.top + e.clientY - pd.y, innerHeight - h - 4)) + 'px';
+      panelEl.style.right = 'auto';
+      panelEl.style.bottom = 'auto';
+    });
+    head.addEventListener('pointerup', () => {
+      if (!pd) return;
+      const moved = pd.moved;
+      pd = null;
+      if (moved) savePanelPos();
+    });
+    head.addEventListener('dblclick', (e) => {
+      if (e.target.closest('button')) return;
+      resetPanelPos();
+    });
 
     // 列表：mousedown 阻止面板夺焦，保住页面输入框的焦点与光标
     listEl.addEventListener('mousedown', (e) => {

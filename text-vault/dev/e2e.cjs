@@ -237,6 +237,51 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // 拖动结束不应触面板开关
   ok('拖动不触发面板开关', await page.evaluate(() => window.__tv.root.querySelector('.panel').hidden));
 
+  console.log('== 16. 面板拖动 ==');
+  await page.keyboard.press('Alt+Shift+V');
+  await sleep(120);
+  const headPt = await page.evaluate(() => {
+    const r = window.__tv.root.querySelector('.panel-head').getBoundingClientRect();
+    return { x: r.left + 40, y: r.top + r.height / 2 }; // 避开右侧按钮
+  });
+  const pBefore = await page.evaluate(() => {
+    const r = window.__tv.root.querySelector('.panel').getBoundingClientRect();
+    return { l: Math.round(r.left), t: Math.round(r.top) };
+  });
+  await page.mouse.move(headPt.x, headPt.y);
+  await page.mouse.down();
+  await page.mouse.move(headPt.x + 150, headPt.y + 50, { steps: 10 });
+  await page.mouse.up();
+  await sleep(120);
+  const pAfter = await page.evaluate(() => {
+    const r = window.__tv.root.querySelector('.panel').getBoundingClientRect();
+    return { l: Math.round(r.left), t: Math.round(r.top) };
+  });
+  ok('面板随标题栏拖动', Math.abs(pAfter.l - (pBefore.l + 150)) < 30 && Math.abs(pAfter.t - (pBefore.t + 50)) < 30, { pBefore, pAfter });
+  ok('面板位置持久化', await page.evaluate(() => !!window.TextVault.__debug.raw().textVaultPanelPos));
+  await page.keyboard.press('Escape');
+  await sleep(80);
+  await page.keyboard.press('Alt+Shift+V');
+  await sleep(120);
+  const pReopen = await page.evaluate(() => {
+    const r = window.__tv.root.querySelector('.panel').getBoundingClientRect();
+    return { l: Math.round(r.left), t: Math.round(r.top) };
+  });
+  ok('重开面板位置保持', Math.abs(pReopen.l - pAfter.l) < 3 && Math.abs(pReopen.t - pAfter.t) < 3, { pAfter, pReopen });
+  const dblPt = await page.evaluate(() => {
+    const r = window.__tv.root.querySelector('.panel-head').getBoundingClientRect();
+    return { x: r.left + 40, y: r.top + r.height / 2 };
+  });
+  await page.mouse.click(dblPt.x, dblPt.y, { clickCount: 2 });
+  await sleep(150);
+  ok('双击标题栏重置位置', await page.evaluate(() => !window.TextVault.__debug.raw().textVaultPanelPos));
+  // 重置后水平跟随悬浮球(右缘对齐);悬浮球被拖到中部时上方放不下面板,贴视口顶部是预期
+  ok('重置后回到悬浮球旁', await page.evaluate(() => {
+    const pr = window.__tv.root.querySelector('.panel').getBoundingClientRect();
+    const fr = window.__tv.root.querySelector('.fab').getBoundingClientRect();
+    return Math.abs(pr.right - fr.right) < 40 && pr.top >= 4 && pr.bottom <= innerHeight;
+  }));
+
   console.log(`\n结果: ${passed} 通过, ${failed} 失败`);
   if (failed > 0) {
     await page.screenshot({ path: '/tmp/text-vault-e2e-fail.png', fullPage: false });
