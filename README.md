@@ -20,6 +20,7 @@ This repository serves as a personal toolkit for productivity and workflow autom
 | Tool | Description | Language | Status |
 | :--- | :--- | :--- | :--- |
 | **[BackDimmer](./BackDimmer/)** | Background-only dimming tool for focused work. Creates a transparent overlay that stays behind all windows to reduce eye strain without blocking visibility. | AutoHotkey v2 | v1.0.0 |
+| **[Boss Key](./boss-key/)** | Boss-key userscript: one hotkey to land on the right work page. Per-project domain rules, two-stage project chooser (MRU + filter), direct keys, app launching via custom protocols (ZCode, WeCom), and optional open-tab reuse. | JavaScript (Tampermonkey) | v1.4.0 |
 
 ---
 
