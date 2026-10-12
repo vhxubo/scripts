@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         文本暂存匣 · 选中即记、一键回填
 // @namespace    https://vhxubo.local/textvault
-// @version      1.1.0
-// @description  文本片段的跨页面暂存与回填：选中文字后点浮出的「✚ 记」按钮（或油猴菜单 / Alt+Shift+V）把文本存进油猴存储，全站共享；悬浮球打开面板，点击条目——页面里有聚焦的输入框就插入光标处，没有就复制到剪贴板；无选中文本时记录命令自动改读剪贴板；支持编辑、删除（可撤销）、置顶、搜索、去重置顶；悬浮球与面板均可拖动并记忆位置（双击面板标题栏重置），多标签页实时同步。
+// @version      1.2.0
+// @description  文本片段的跨页面暂存与回填：选中文字后点浮出的「✚ 记」按钮（或油猴菜单）把文本存进油猴存储，全站共享；悬浮球打开面板，点击条目——页面里有聚焦的输入框就插入光标处，没有就复制到剪贴板；无选中文本时记录命令自动改读剪贴板；支持编辑、删除（可撤销）、置顶、搜索、去重置顶；呼出热键可自定义（默认 Alt+Shift+V），面板内数字键 1-9 快速选用条目；悬浮球与面板均可拖动并记忆位置，多标签页实时同步。
 // @author       vhxubo
 // @match        *://*/*
 // @match        file:///*
@@ -23,11 +23,12 @@
   const STORE_KEY = 'textVaultEntries';
   const POS_KEY = 'textVaultFabPos';
   const PANEL_POS_KEY = 'textVaultPanelPos';
+  const HOTKEY_KEY = 'textVaultHotkey';
+  const HOTKEY_CODE = 'KeyV';   // 默认呼出热键 Alt+Shift+<code>，可在面板内 ⌨ 自定义
   const MAX_ENTRIES = 1000;     // 条目上限，超出时优先淘汰最旧的未置顶条目
   const MAX_TEXT_LEN = 20000;   // 单条文本上限，超出截断
   const DEDUPE = true;          // 记录重复文本时不新增，改为置顶并刷新时间
   const SNAP_BTN = true;        // 选中文本后浮出「✚ 记」小按钮
-  const HOTKEY_CODE = 'KeyV';   // Alt+Shift+<code> 开关面板
 
   /* ==================== 存储层 ==================== */
   let entries = loadEntries();
@@ -116,6 +117,35 @@
 
   function byId(id) {
     return entries.find((x) => x.id === id);
+  }
+
+  /* ==================== 呼出热键配置 ==================== */
+  let hotkeyCfg = loadHotkey();
+
+  function loadHotkey() {
+    try {
+      const p = JSON.parse(GM_getValue(HOTKEY_KEY, 'null'));
+      if (p && p.code) return { alt: !!p.alt, ctrl: !!p.ctrl, meta: !!p.meta, shift: !!p.shift, code: String(p.code) };
+    } catch { /* 忽略损坏的热键数据 */ }
+    return { alt: true, shift: true, code: HOTKEY_CODE };
+  }
+
+  function matchHotkey(e) {
+    return e.code === hotkeyCfg.code
+      && e.altKey === !!hotkeyCfg.alt
+      && e.ctrlKey === !!hotkeyCfg.ctrl
+      && e.metaKey === !!hotkeyCfg.meta
+      && e.shiftKey === !!hotkeyCfg.shift;
+  }
+
+  function hotkeyLabel(h) {
+    const parts = [];
+    if (h.ctrl) parts.push('Ctrl');
+    if (h.alt) parts.push('Alt');
+    if (h.shift) parts.push('Shift');
+    if (h.meta) parts.push(h.code.startsWith('Key') ? 'Cmd' : 'Meta');
+    parts.push(h.code.replace(/^Key|^Digit/, '').replace(/^Arrow/, ''));
+    return parts.join('+');
   }
 
   function bump(id) {
@@ -312,6 +342,14 @@ button, input, textarea { font: inherit; color: inherit; }
 .item { padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
 .item:hover { background: var(--hover); }
 .item.pinned { box-shadow: inset 3px 0 0 var(--pin); }
+.item-main { display: flex; align-items: flex-start; gap: 6px; }
+.key-hint {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; margin-top: 2px;
+  border: 1px solid var(--border); border-radius: 4px;
+  font-size: 10px; color: var(--muted); background: var(--input-bg);
+}
+.item:hover .key-hint { border-color: var(--accent); color: var(--accent); }
 .item-text {
   white-space: pre-wrap; word-break: break-word;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
@@ -359,12 +397,13 @@ button, input, textarea { font: inherit; color: inherit; }
 `;
 
   const HTML = `
-<button class="fab" title="文本暂存匣 — 拖动移动 · 点击开关面板（Alt+Shift+V）"><span class="num">0</span></button>
+<button class="fab" title="文本暂存匣"><span class="num">0</span></button>
 <button class="snap" hidden>✚ 记</button>
 <div class="panel" hidden>
   <div class="panel-head" title="拖动移动面板 · 双击重置回悬浮球旁">
     <span>文本暂存匣 <span class="cnt"></span></span>
     <span class="head-actions">
+      <button class="icon-btn act-hotkey" title="设置呼出热键">⌨</button>
       <button class="icon-btn act-add" title="新增一条">＋</button>
       <button class="icon-btn act-close" title="关闭（Esc）">✕</button>
     </span>
@@ -380,7 +419,7 @@ button, input, textarea { font: inherit; color: inherit; }
   <div class="list"></div>
   <div class="panel-foot">
     <button class="link-btn act-clear">清空全部</button>
-    <span class="foot-hint">点击条目：写入输入框 / 复制</span>
+    <span class="foot-hint">点击条目：写入输入框 / 复制 · 按 1-9 快速选用</span>
   </div>
 </div>
 <div class="toast" hidden><span class="toast-msg"></span><button class="toast-act" hidden></button></div>
@@ -446,7 +485,8 @@ button, input, textarea { font: inherit; color: inherit; }
       return;
     }
 
-    listEl.innerHTML = shown.map((e) => {
+    listEl.innerHTML = shown.map((e, i) => {
+      const num = i < 9 ? i + 1 : 0;
       if (e.id === editingId) {
         return `<div class="item editing" data-id="${e.id}">
           <textarea class="edit-area" placeholder="编辑内容 — Ctrl+Enter 保存，Esc 取消"></textarea>
@@ -457,7 +497,7 @@ button, input, textarea { font: inherit; color: inherit; }
         </div>`;
       }
       return `<div class="item${e.pinned ? ' pinned' : ''}" data-id="${e.id}">
-        <div class="item-text"></div>
+        <div class="item-main">${num ? `<span class="key-hint">${num}</span>` : ''}<div class="item-text"></div></div>
         <div class="item-meta">
           <span class="meta-info">${esc(metaOf(e))}</span>
           <span class="item-actions">
@@ -610,6 +650,7 @@ button, input, textarea { font: inherit; color: inherit; }
     // 面板头部
     root.querySelector('.act-add').addEventListener('click', openComposer);
     root.querySelector('.act-close').addEventListener('click', closePanel);
+    root.querySelector('.act-hotkey').addEventListener('click', startHotkeyCapture);
     searchEl.addEventListener('input', render);
 
     // 拖动面板（标题栏为手柄），双击标题栏重置位置
@@ -882,6 +923,26 @@ button, input, textarea { font: inherit; color: inherit; }
   }
 
   /* ==================== 全局事件 ==================== */
+  let capturingHotkey = false;
+
+  function startHotkeyCapture() {
+    capturingHotkey = true;
+    toast('请按下新的呼出热键（需含 Ctrl / Alt / Cmd），Esc 取消', { ms: 6000 });
+  }
+
+  // 焦点不在任何输入框（页面或面板）时，数字键 1-9 直接选用面板里对应的条目
+  function onDigitKey(e) {
+    if (!panelVisible || !modalMask.hidden || capturingHotkey) return;
+    if (!/^[1-9]$/.test(e.key) || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+    const items = [...root.querySelectorAll('.item')].filter((n) => !n.classList.contains('editing'));
+    const entry = byId(items[+e.key - 1] && items[+e.key - 1].dataset.id);
+    if (!entry) return;
+    e.preventDefault();
+    useEntry(entry);
+  }
+
   function bindGlobal() {
     // 记住最后聚焦的页面输入框
     window.addEventListener('focusin', (e) => {
@@ -890,13 +951,34 @@ button, input, textarea { font: inherit; color: inherit; }
       if (el) lastEditable = el;
     }, true);
 
-    // 热键 + Esc
+    // 热键录制 / 呼出热键 / Esc / 数字键选用
     window.addEventListener('keydown', (e) => {
-      if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === HOTKEY_CODE) {
+      if (capturingHotkey) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+          capturingHotkey = false;
+          toast('已取消，保持原热键 ' + hotkeyLabel(hotkeyCfg));
+          return;
+        }
+        if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key)) return; // 等完整组合
+        if (!(e.altKey || e.ctrlKey || e.metaKey)) {
+          toast('必须包含 Ctrl / Alt / Cmd，再试一次或按 Esc 取消', { ms: 4000 });
+          return;
+        }
+        hotkeyCfg = { alt: e.altKey, ctrl: e.ctrlKey, meta: e.metaKey, shift: e.shiftKey, code: e.code };
+        GM_setValue(HOTKEY_KEY, JSON.stringify(hotkeyCfg));
+        capturingHotkey = false;
+        setFabTitle();
+        toast('呼出热键已设为 ' + hotkeyLabel(hotkeyCfg));
+        return;
+      }
+      if (matchHotkey(e)) {
         e.preventDefault();
         togglePanel();
         return;
       }
+      onDigitKey(e);
       if (e.key !== 'Escape') return;
       if (!modalMask.hidden) { modalMask.hidden = true; e.preventDefault(); return; }
       if (!panelVisible) return;
@@ -913,17 +995,28 @@ button, input, textarea { font: inherit; color: inherit; }
         entries = loadEntries();
         render();
       });
+      GM_addValueChangeListener(HOTKEY_KEY, (key, oldVal, newVal, remote) => {
+        if (!remote) return;
+        hotkeyCfg = loadHotkey();
+        setFabTitle();
+      });
     }
   }
 
   /* ==================== 油猴菜单 & 启动 ==================== */
+  function setFabTitle() {
+    fabEl.title = '文本暂存匣 — 拖动移动 · 点击开关面板（' + hotkeyLabel(hotkeyCfg) + '）';
+  }
+
   function init() {
     buildUI();
     bindSelection();
     bindGlobal();
+    setFabTitle();
     if (typeof GM_registerMenuCommand === 'function') {
       GM_registerMenuCommand('➕ 记录选中文本 / 剪贴板', recordFromMenu);
-      GM_registerMenuCommand('📂 打开 / 收起面板', togglePanel);
+      GM_registerMenuCommand('📂 打开 / 收起面板（' + hotkeyLabel(hotkeyCfg) + '）', togglePanel);
+      GM_registerMenuCommand('⌨ 设置呼出热键（当前 ' + hotkeyLabel(hotkeyCfg) + '）', startHotkeyCapture);
       GM_registerMenuCommand('🗑 清空全部记录', clearFromMenu);
     }
   }

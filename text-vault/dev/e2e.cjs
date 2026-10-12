@@ -41,7 +41,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   console.log('== 1. 初始化 ==');
   const menus = await page.evaluate(() => window.TextVault.__debug.menus());
-  ok('油猴菜单注册 3 条', menus.length === 3, menus);
+  ok('油猴菜单注册 4 条', menus.length === 4, menus);
   ok('悬浮球可见且显示 0', await page.evaluate(() => {
     const el = window.__tv.root.querySelector('.fab');
     return !el.hidden && el.querySelector('.num').textContent === '0';
@@ -281,6 +281,56 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const fr = window.__tv.root.querySelector('.fab').getBoundingClientRect();
     return Math.abs(pr.right - fr.right) < 40 && pr.top >= 4 && pr.bottom <= innerHeight;
   }));
+
+  console.log('== 17. 热键自定义 ==');
+  const menus2 = await page.evaluate(() => window.TextVault.__debug.menus());
+  ok('菜单含热键设置项', menus2.some((m) => m.includes('设置呼出热键')), menus2);
+  await page.keyboard.press('Escape'); // 确定初始态:面板关
+  await sleep(80);
+  await page.keyboard.press('Alt+Shift+V'); // 从关到开
+  await sleep(120);
+  ok('面板已打开', await page.evaluate(() => !window.__tv.root.querySelector('.panel').hidden));
+  await clickAt('.act-hotkey');
+  await sleep(100);
+  await page.keyboard.press('Control+Shift+p'); // 录制 Ctrl+Shift+P
+  await sleep(150);
+  ok('热键已保存为 Ctrl+Shift+P', await page.evaluate(() => {
+    const h = JSON.parse(window.TextVault.__debug.raw().textVaultHotkey || 'null');
+    return h && h.code === 'KeyP' && h.ctrl && h.shift && !h.alt && !h.meta;
+  }));
+  await page.keyboard.press('Escape'); // 关面板
+  await sleep(80);
+  await page.keyboard.press('Alt+Shift+V');
+  await sleep(100);
+  ok('旧热键失效', await page.evaluate(() => window.__tv.root.querySelector('.panel').hidden));
+  await page.keyboard.press('Control+Shift+p');
+  await sleep(100);
+  ok('新热键可开关面板', await page.evaluate(() => !window.__tv.root.querySelector('.panel').hidden));
+
+  console.log('== 18. 数字键快速选用 ==');
+  // 先造一条数据并刷新列表
+  await page.evaluate(() => {
+    getSelection().removeAllRanges();
+    window.TextVault.__debug.setClipboard('数字键选用测试文本');
+    window.TextVault.__debug.runMenu('➕ 记录选中文本 / 剪贴板');
+  });
+  await sleep(250); // 等跨标签同步回调刷新列表
+  ok('前 9 条显示数字角标', await page.evaluate(() => {
+    const hints = [...window.__tv.root.querySelectorAll('.item:not(.editing) .key-hint')].map((n) => n.textContent);
+    return hints.length >= 1 && hints[0] === '1' && hints.every((h, i) => h === String(i + 1));
+  }));
+  await page.evaluate(() => { document.getElementById('target-input').value = ''; document.getElementById('target-input').focus(); });
+  await page.evaluate(() => document.activeElement.blur()); // 模拟焦点已离开输入框(面板操作态),lastEditable 仍指向 input
+  await page.keyboard.press('1');
+  await sleep(150);
+  const digVal = await page.evaluate(() => document.getElementById('target-input').value);
+  ok('数字键 1 选用第一条并写入', digVal.includes('数字键选用测试文本'), digVal);
+  // 焦点在输入框时数字键不触发(保持正常输入)
+  await page.evaluate(() => { const el = document.getElementById('target-input'); el.value = ''; el.focus(); });
+  await page.keyboard.press('2');
+  await sleep(100);
+  const digVal2 = await page.evaluate(() => document.getElementById('target-input').value);
+  ok('输入框聚焦时数字键正常输入', digVal2 === '' || !digVal2.includes('数字键选用测试文本'), digVal2);
 
   console.log(`\n结果: ${passed} 通过, ${failed} 失败`);
   if (failed > 0) {
