@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         2libra 已读帖子隐藏
 // @namespace    https://vhxubo.local/2libra-hide-read
-// @version      1.0.0
+// @version      1.1.0
 // @description  在 2libra.com 自动隐藏读过的帖子：点击帖子标题（含中键/新标签打开）或进入帖子详情页时记入已读，主列表与「今日热议」等处的已读条目整行隐藏；油猴菜单可临时显示已读、一键清空记录；已读数据存油猴存储、跨标签页同步，超上限自动淘汰最早记录。
 // @author       vhxubo
 // @match        https://2libra.com/*
@@ -146,6 +146,13 @@
       }
     ));
   }
+
+  // ---------- 原生 :visited 灰显（覆盖安装脚本之前读过的帖子） ----------
+  // 浏览器不允许 JS 读取 :visited 状态（getComputedStyle 返回未访问样式），也不允许
+  // :visited 改 display/visibility，因此历史已读只能灰显标题，隐藏仍依赖脚本记录
+  const style = document.createElement('style');
+  style.textContent = 'a.title-link:visited { color: color-mix(in srgb, currentColor 45%, transparent); }';
+  document.head.appendChild(style);
 
   // ---------- 启动 ----------
   checkLocation();

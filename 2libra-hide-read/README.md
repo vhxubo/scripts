@@ -4,6 +4,7 @@ A Tampermonkey userscript for [2libra.com](https://2libra.com/): posts you have 
 
 ## ✨ Features
 
+- **Native visited gray-out** - Posts read **before** the script was installed are grayed out via the browser's native `:visited` styling (theme-adaptive `color-mix`), the moment the page loads — no records needed
 - **Auto read-tracking** - Clicking a post title (including middle-click / open-in-new-tab) or landing on a post detail page records it as read; aggregate pages like `/post/latest` and `/post/hot/*` are never miscounted
 - **Whole-row hiding** - The read post's entire row is hidden (title + node badge + author + time + reply count); aggregator sidebar entries hide as complete rows too; fallback hides the title link alone if the markup changes
 - **SPA-aware** - Built for the site's Next.js client-side routing: a MutationObserver re-sweeps on hydration, pagination and section switches, and `pushState`/`popstate` hooks catch soft navigations to post pages
@@ -18,7 +19,7 @@ A Tampermonkey userscript for [2libra.com](https://2libra.com/): posts you have 
 2. Create a new userscript, paste in `2libra-hide-read.user.js`, save
 3. Open <https://2libra.com/> — from then on, any post you open disappears from lists on your next visit
 
-> Read tracking starts from installation: posts read before the script was installed are not backfilled (browsers don't expose history to page scripts).
+> Read tracking starts from installation: posts read before the script was installed cannot be **hidden** (browsers don't expose history to page scripts) — they are **grayed out** via native `:visited` instead. Hiding cannot rely on `:visited` either: browsers restrict it to color properties and never let page scripts probe visited state.
 
 ## 📖 Usage
 

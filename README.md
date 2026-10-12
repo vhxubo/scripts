@@ -21,7 +21,7 @@ This repository serves as a personal toolkit for productivity and workflow autom
 | :--- | :--- | :--- | :--- |
 | **[BackDimmer](./BackDimmer/)** | Background-only dimming tool for focused work. Creates a transparent overlay that stays behind all windows to reduce eye strain without blocking visibility. | AutoHotkey v2 | v1.0.0 |
 | **[Boss Key](./boss-key/)** | Boss-key userscript: one hotkey to land on the right work page. Per-project domain rules, two-stage project chooser (MRU + filter), direct keys, app launching via custom protocols (ZCode, WeCom), and optional open-tab reuse. | JavaScript (Tampermonkey) | v1.4.0 |
-| **[2libra Hide Read](./2libra-hide-read/)** | Userscript for 2libra.com that auto-hides already-read posts from every list (main feed, sections, hot sidebar). Click/visit tracking, SPA-aware sweeping, cross-tab sync, temp-show and one-click clear via Tampermonkey menu. | JavaScript (Tampermonkey) | v1.0.0 |
+| **[2libra Hide Read](./2libra-hide-read/)** | Userscript for 2libra.com that auto-hides already-read posts from every list (main feed, sections, hot sidebar) and grays out natively-visited (pre-install) posts. Click/visit tracking, SPA-aware sweeping, cross-tab sync, temp-show and one-click clear via Tampermonkey menu. | JavaScript (Tampermonkey) | v1.1.0 |
 
 ---
 

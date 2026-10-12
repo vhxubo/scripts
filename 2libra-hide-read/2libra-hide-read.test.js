@@ -20,6 +20,8 @@ globalThis.document = {
   addEventListener() {},
   querySelectorAll: () => [],
   documentElement: {},
+  createElement: () => ({}),
+  head: { appendChild() {} },
 };
 globalThis.location = {
   href: 'https://2libra.com/',
