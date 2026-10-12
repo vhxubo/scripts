@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Text Vault 测试页</title>
+<style>
+  body { font: 14px/1.6 system-ui, sans-serif; max-width: 760px; margin: 30px auto; padding: 0 20px; color: #222; }
+  section { margin: 22px 0; padding: 14px; border: 1px solid #ddd; border-radius: 10px; }
+  h2 { margin: 0 0 10px; font-size: 15px; }
+  input, textarea { width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #bbb; border-radius: 6px; font: inherit; }
+  #rich { min-height: 60px; border: 1px solid #bbb; border-radius: 6px; padding: 8px; background: #fafafa; }
+  #log { position: fixed; left: 12px; bottom: 12px; max-width: 40vw; max-height: 40vh; overflow: auto; background: #111c; color: #9f9; font: 11px/1.5 monospace; padding: 8px; border-radius: 8px; pointer-events: none; }
+  #menus { position: fixed; right: 12px; top: 12px; background: #fff; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 4px 14px #0002; padding: 6px; display: flex; flex-direction: column; gap: 4px; z-index: 999; }
+  #menus button { border: none; background: #f4f4f4; border-radius: 6px; padding: 4px 10px; cursor: pointer; text-align: left; font-size: 12px; }
+  #menus button:hover { background: #e2e2e2; }
+  .pass { color: #0a0; font-weight: 700; }
+  .fail { color: #c00; font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>Text Vault 测试页</h1>
+<p>模拟油猴环境：右侧是注册的油猴菜单，左下角是运行日志。用鼠标选中文本试试「✚ 记」。</p>
+
+<section>
+  <h2>可选中文本</h2>
+  <p id="para">轻量级、实用、专注 —— 这是可以被选中并记录的示例文本，来自 text-vault 测试页。</p>
+</section>
+
+<section>
+  <h2>目标输入框</h2>
+  <input id="target-input" placeholder="普通 input — 聚焦后点面板条目，文本应插入这里">
+  <textarea id="target-textarea" rows="3" placeholder="textarea — 已有内容 + 光标位置测试用"></textarea>
+  <div id="rich" contenteditable="true">contenteditable 富文本区，先点这里获得光标，再点面板条目。</div>
+</section>
+
+<div id="menus"><b style="font-size:11px;color:#888">油猴菜单（shim）</b></div>
+<div id="log"></div>
+
+<script src="./shim.js"></script>
+<script src="../text-vault.user.js"></script>
+<script>
+  const logEl = document.getElementById('log');
+  window.__log = [];
+  function log(msg, cls) {
+    window.__log.push(msg);
+    const div = document.createElement('div');
+    if (cls) div.className = cls;
+    div.textContent = msg;
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  window.log = log;
+
+  // 菜单 UI
+  const menusEl = document.getElementById('menus');
+  document.addEventListener('gm-menu', (e) => {
+    const btn = document.createElement('button');
+    btn.textContent = e.detail;
+    btn.dataset.label = e.detail;
+    btn.onclick = () => window.TextVault.__debug.runMenu(e.detail);
+    menusEl.appendChild(btn);
+  });
+
+  // 快捷断言工具：?run=smoke 时自动执行无 UI 的数据层断言
+  const params = new URLSearchParams(location.search);
+  if (params.get('run') === 'smoke') {
+    const dbg = window.TextVault.__debug;
+    const D = window.TextVault.__debug;
+    setTimeout(() => {
+      try {
+        // 数据层:直接调菜单不可行(依赖选区/剪贴板权限),改用 addEntry 无法从外部调,
+        // 通过菜单「记录剪贴板」+ shim 剪贴板来测
+        dbg.setClipboard('剪贴板冒烟测试文本');
+        dbg.runMenu('➕ 记录选中文本 / 剪贴板');
+        setTimeout(() => {
+          const entries = dbg.dump();
+          const ok1 = entries.length === 1 && entries[0].text === '剪贴板冒烟测试文本';
+          log('记录剪贴板: ' + (ok1 ? 'PASS' : 'FAIL ' + JSON.stringify(entries)), ok1 ? 'pass' : 'fail');
+          // 去重
+          dbg.runMenu('➕ 记录选中文本 / 剪贴板');
+          setTimeout(() => {
+            const e2 = dbg.dump();
+            const ok2 = e2.length === 1 && e2[0].count === 0;
+            log('去重置顶: ' + (ok2 ? 'PASS' : 'FAIL ' + JSON.stringify(e2)), ok2 ? 'pass' : 'fail');
+            // 空剪贴板
+            dbg.setClipboard('');
+            dbg.runMenu('➕ 记录选中文本 / 剪贴板');
+            log('空剪贴板处理已触发(应 toast「剪贴板是空的」)');
+          }, 300);
+        }, 300);
+      } catch (err) {
+        log('smoke 异常: ' + err.message, 'fail');
+      }
+    }, 500);
+  }
+</script>
+</body>
+</html>
