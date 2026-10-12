@@ -216,12 +216,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.keyboard.press('Escape');
   await sleep(80);
   ok('Esc 关闭面板', await page.evaluate(() => window.__tv.root.querySelector('.panel').hidden));
-  await page.keyboard.press('Alt+Shift+V');
+  await page.keyboard.press('Control+Alt+Shift+v');
   await sleep(80);
-  ok('Alt+Shift+V 打开面板', await page.evaluate(() => !window.__tv.root.querySelector('.panel').hidden));
-  await page.keyboard.press('Alt+Shift+V');
+  ok('Ctrl+Alt+Shift+V 打开面板', await page.evaluate(() => !window.__tv.root.querySelector('.panel').hidden));
+  await page.keyboard.press('Control+Alt+Shift+v');
   await sleep(80);
-  ok('Alt+Shift+V 再按关闭面板', await page.evaluate(() => window.__tv.root.querySelector('.panel').hidden));
+  ok('Ctrl+Alt+Shift+V 再按关闭面板', await page.evaluate(() => window.__tv.root.querySelector('.panel').hidden));
 
   console.log('== 15. 悬浮球拖动记忆位置 ==');
   const fr = await rectOf('.fab');
@@ -238,7 +238,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('拖动不触发面板开关', await page.evaluate(() => window.__tv.root.querySelector('.panel').hidden));
 
   console.log('== 16. 面板拖动 ==');
-  await page.keyboard.press('Alt+Shift+V');
+  await page.keyboard.press('Control+Alt+Shift+v');
   await sleep(120);
   const headPt = await page.evaluate(() => {
     const r = window.__tv.root.querySelector('.panel-head').getBoundingClientRect();
@@ -261,7 +261,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('面板位置持久化', await page.evaluate(() => !!window.TextVault.__debug.raw().textVaultPanelPos));
   await page.keyboard.press('Escape');
   await sleep(80);
-  await page.keyboard.press('Alt+Shift+V');
+  await page.keyboard.press('Control+Alt+Shift+v');
   await sleep(120);
   const pReopen = await page.evaluate(() => {
     const r = window.__tv.root.querySelector('.panel').getBoundingClientRect();
@@ -287,7 +287,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('菜单含热键设置项', menus2.some((m) => m.includes('设置呼出热键')), menus2);
   await page.keyboard.press('Escape'); // 确定初始态:面板关
   await sleep(80);
-  await page.keyboard.press('Alt+Shift+V'); // 从关到开
+  await page.keyboard.press('Control+Alt+Shift+v'); // 从关到开
   await sleep(120);
   ok('面板已打开', await page.evaluate(() => !window.__tv.root.querySelector('.panel').hidden));
   await clickAt('.act-hotkey');
@@ -300,7 +300,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   }));
   await page.keyboard.press('Escape'); // 关面板
   await sleep(80);
-  await page.keyboard.press('Alt+Shift+V');
+  await page.keyboard.press('Control+Alt+Shift+v');
   await sleep(100);
   ok('旧热键失效', await page.evaluate(() => window.__tv.root.querySelector('.panel').hidden));
   await page.keyboard.press('Control+Shift+p');

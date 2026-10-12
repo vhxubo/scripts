@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         文本暂存匣 · 选中即记、一键回填
 // @namespace    https://vhxubo.local/textvault
-// @version      1.2.0
-// @description  文本片段的跨页面暂存与回填：选中文字后点浮出的「✚ 记」按钮（或油猴菜单）把文本存进油猴存储，全站共享；悬浮球打开面板，点击条目——页面里有聚焦的输入框就插入光标处，没有就复制到剪贴板；无选中文本时记录命令自动改读剪贴板；支持编辑、删除（可撤销）、置顶、搜索、去重置顶；呼出热键可自定义（默认 Alt+Shift+V），面板内数字键 1-9 快速选用条目；悬浮球与面板均可拖动并记忆位置，多标签页实时同步。
+// @version      1.2.1
+// @description  文本片段的跨页面暂存与回填：选中文字后点浮出的「✚ 记」按钮（或油猴菜单）把文本存进油猴存储，全站共享；悬浮球打开面板，点击条目——页面里有聚焦的输入框就插入光标处，没有就复制到剪贴板；无选中文本时记录命令自动改读剪贴板；支持编辑、删除（可撤销）、置顶、搜索、去重置顶；呼出热键可自定义（默认 Ctrl+Alt+Shift+V，避开系统/输入法常用组合），面板内数字键 1-9 快速选用条目；悬浮球与面板均可拖动并记忆位置，多标签页实时同步。
 // @author       vhxubo
 // @match        *://*/*
 // @match        file:///*
@@ -24,7 +24,7 @@
   const POS_KEY = 'textVaultFabPos';
   const PANEL_POS_KEY = 'textVaultPanelPos';
   const HOTKEY_KEY = 'textVaultHotkey';
-  const HOTKEY_CODE = 'KeyV';   // 默认呼出热键 Alt+Shift+<code>，可在面板内 ⌨ 自定义
+  const HOTKEY_CODE = 'KeyV';   // 默认呼出热键 Ctrl+Alt+Shift+<code>，可在面板内 ⌨ 自定义
   const MAX_ENTRIES = 1000;     // 条目上限，超出时优先淘汰最旧的未置顶条目
   const MAX_TEXT_LEN = 20000;   // 单条文本上限，超出截断
   const DEDUPE = true;          // 记录重复文本时不新增，改为置顶并刷新时间
@@ -127,7 +127,8 @@
       const p = JSON.parse(GM_getValue(HOTKEY_KEY, 'null'));
       if (p && p.code) return { alt: !!p.alt, ctrl: !!p.ctrl, meta: !!p.meta, shift: !!p.shift, code: String(p.code) };
     } catch { /* 忽略损坏的热键数据 */ }
-    return { alt: true, shift: true, code: HOTKEY_CODE };
+    // 三修饰键组合，避开 Alt+Shift（系统输入法切换）、Ctrl+Shift（输入法/应用常占）等通用组合
+    return { alt: true, ctrl: true, shift: true, code: HOTKEY_CODE };
   }
 
   function matchHotkey(e) {
@@ -927,7 +928,7 @@ button, input, textarea { font: inherit; color: inherit; }
 
   function startHotkeyCapture() {
     capturingHotkey = true;
-    toast('请按下新的呼出热键（需含 Ctrl / Alt / Cmd），Esc 取消', { ms: 6000 });
+    toast('请按下新的呼出热键（需含 Ctrl / Alt / Cmd，建议三键组合避免冲突），Esc 取消', { ms: 6000 });
   }
 
   // 焦点不在任何输入框（页面或面板）时，数字键 1-9 直接选用面板里对应的条目
