@@ -26,7 +26,7 @@ globalThis.MutationObserver = class { observe() {} };
 globalThis.requestAnimationFrame = () => {};
 
 // ---- 把内部常量导出注入 IIFE 末尾 ----
-const EXPORT = ';globalThis.__t={SIGNATURE,WRAP_SEL,SHRINK_CLASS,buildCss};';
+const EXPORT = ';globalThis.__t={SIGNATURE,WRAP_SEL,EFFECT_CLASSES,buildCss};';
 const closer = '})();';
 const last = src.lastIndexOf(closer);
 if (last === -1) { console.error('未找到 IIFE 结束标记'); process.exit(1); }
@@ -45,15 +45,17 @@ function ok(cond, msg) {
   else { failed++; console.error('✗ ' + msg); }
 }
 
-// 真实页面上的头像容器 class（模糊 / 偏移 / 缩放 / 旋转四种样例的根节点一致）
+// 真实页面上的头像容器 class（模糊 / 偏移 / 缩放 / 旋转四种样例的根节点一致），
+// 内层 class 来自站点 avatar_effect（shrink/spin 挂在内层 div 上）
 const SAMPLE_WRAP_CLASS = 'relative leading-none [&_img]:block [&_canvas]:block ';
 const SAMPLE_INNER_CLASSES = [
-  'bg-base-100 shadow-xs',                                        // 直接放 img 的内层
-  'avatar-shrink-hover bg-base-100 shadow-xs',                    // 带悬停缩放的内层
+  'bg-base-100 shadow-xs',                                   // 无效果的内层
+  'avatar-shrink-hover bg-base-100 shadow-xs',               // shrink：悬停缩放
+  'bg-base-100 shadow-xs avatar-spin-hover',                 // spin：关键帧旋转
 ];
 const CSS = T.buildCss();
 
-// 选择器锚点：四种真实样例的根节点 class 都含有标志性子串（与 [class*="…"] 语义一致）
+// 选择器锚点：真实样例的根节点 class 都含有标志性子串（与 [class*="…"] 语义一致）
 ok(typeof T.SIGNATURE === 'string' && T.SIGNATURE.length > 0, 'SIGNATURE 应为非空字符串');
 ok(SAMPLE_WRAP_CLASS.includes(T.SIGNATURE), '真实头像容器 class 应含有标志性子串');
 ok(T.WRAP_SEL === `[class*="${T.SIGNATURE}"]`, 'WRAP_SEL 应为 class 属性包含匹配');
@@ -66,18 +68,30 @@ for (const prop of ['filter: none !important', 'transform: none !important',
 }
 ok(CSS.includes(`${T.WRAP_SEL},\n${T.WRAP_SEL} div`), '清理规则应同时作用于根节点与所有内层 div');
 
-// canvas 处理图：仅在其后紧跟原生 img 时隐藏（:has(+ img) 兜底），原图恢复显示
-ok(CSS.includes(`${T.WRAP_SEL} canvas:has(+ img)`), 'canvas 规则应带 :has(+ img) 守卫');
-ok(/canvas:has\(\+ img\)\s*\{\s*display: none !important/.test(CSS), 'canvas 应被隐藏');
-ok(/img\s*\{[^}]*display: block !important/.test(CSS), 'img 应恢复 display: block');
-ok(/img\s*\{[^}]*opacity: 1 !important/.test(CSS), 'img 不应被透明化');
+// GIF 悬停播放机制：脚本不得触碰 canvas/img 的显隐（站点在悬停时自行切换 img 的
+// display:block，静止时显示 canvas 静止帧），否则 GIF 会常驻播放或头像空白
+ok(!CSS.includes('canvas'), '不应有任何针对 canvas 的规则（悬停播放依赖 canvas 静止帧）');
+ok(!/display:\s*block/.test(CSS), '不应强制 img display:block（站点控制悬停时才显示 GIF）');
+ok(!/display:\s*none/.test(CSS), '不应强制任何元素 display:none');
+ok(!CSS.includes('opacity'), '不应改动透明度（img 渐显由站点控制）');
 
-// 悬停缩放：类名规则 + 状态伪类兜底
-for (const sel of [`.${T.SHRINK_CLASS}`, `.${T.SHRINK_CLASS}:hover`, `.${T.SHRINK_CLASS}:active`]) {
-  ok(CSS.includes(sel), `应包含悬停缩放兜底选择器 ${sel}`);
+// 悬停效果类：spin 是关键帧动画，必须清 animation；shrink/zoom 清 transform/transition
+ok(Array.isArray(T.EFFECT_CLASSES) && T.EFFECT_CLASSES.length >= 2, '应声明至少两个效果类名');
+for (const cls of T.EFFECT_CLASSES) {
+  ok(CSS.includes('.' + cls), `CSS 应包含效果类兜底选择器 .${cls}`);
 }
-ok(SAMPLE_INNER_CLASSES[1].split(/\s+/).includes(T.SHRINK_CLASS), '缩放样例的内层 class 应能按类名摘除');
-ok(!SAMPLE_INNER_CLASSES[0].split(/\s+/).includes(T.SHRINK_CLASS), '普通内层不应误伤');
+ok(/animation: none !important/.test(CSS), '效果类应清 animation（avatar-spin-rotate 关键帧）');
+ok(/:hover/.test(CSS) && /:active/.test(CSS), '效果类兜底应覆盖 hover/active 状态');
+
+// sweep 用同一份类名列表拼选择器，能命中真实样例的内层 class
+const sweepSelector = T.EFFECT_CLASSES.map((c) => '.' + c).join(',');
+for (const inner of SAMPLE_INNER_CLASSES.slice(1)) {
+  const hit = T.EFFECT_CLASSES.some((c) => inner.split(/\s+/).includes(c));
+  ok(hit, `效果样例内层 class「${inner}」应被 sweep 选择器命中`);
+}
+ok(!SAMPLE_INNER_CLASSES[0].split(/\s+/).some((c) => T.EFFECT_CLASSES.includes(c)),
+  '无效果的内层 class 不应被误伤');
+ok(sweepSelector.startsWith('.') && sweepSelector.includes(','), 'sweep 选择器应为多类并集');
 
 // 样式注入：document-start 阶段即挂载，默认启用
 ok(styles.length === 1, '应注入恰好一个 <style>');
