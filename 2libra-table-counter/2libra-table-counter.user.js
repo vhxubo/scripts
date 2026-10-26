@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         2libra 表格条数统计
 // @namespace    https://vhxubo.local/2libra-table-counter
-// @version      1.0.0
+// @version      1.0.1
 // @description  在 2libra.com 给页面里所有 table 组件（金币流水等）加一行「共 N 条」统计徽标：表格数据增删、异步加载、翻页筛选、SPA 路由切换时实时同步；徽标插在表格正前方、内联样式不依赖站点类名，表格隐藏（如响应式切换）时徽标同步隐藏；只统计可见行（display:none 的行不计），油猴菜单一键开关并持久化。
 // @author       vhxubo
 // @match        https://2libra.com/*
@@ -63,13 +63,12 @@
     }
   }
 
-  // 表格隐藏判定：Tailwind 的 hidden 类 + 计算样式双保险（样式表未加载时类名兜底）
+  // 以最终样式为准：hidden 可被 md:table 等响应式规则覆盖。
   function isTableHidden(table) {
-    if (table.classList && table.classList.contains('hidden')) return true;
     try {
       return getComputedStyle(table).display === 'none';
     } catch (e) {
-      return false;
+      return !!(table.classList && table.classList.contains('hidden'));
     }
   }
 
@@ -97,9 +96,8 @@
 
   // 徽标始终是表格的正向前一个兄弟节点；站点重渲染挪走/删掉徽标时重新补插
   function badgeFor(table) {
-    for (let el = table.previousElementSibling; el; el = el.previousElementSibling) {
-      if (el.hasAttribute && el.hasAttribute(BADGE_FLAG)) return el;
-    }
+    const previous = table.previousElementSibling;
+    if (previous && previous.hasAttribute(BADGE_FLAG)) return previous;
     const parent = table.parentNode;
     if (!parent) return null; // 表格暂未挂载，等下一次 sweep
     const badge = makeBadge();
@@ -180,6 +178,10 @@
     attributes: true,
     attributeFilter: ['class', 'hidden', 'style'],
   });
+
+  // 媒体查询切换不会修改 DOM，需要在窗口尺寸变化后重算显隐和行数。
+  window.addEventListener('resize', requestSweep);
+  window.addEventListener('load', requestSweep);
 
   registerMenus();
 })();

@@ -14,7 +14,8 @@ globalThis.GM_getValue = (k, d) => (store.value == null ? d : store.value);
 globalThis.GM_setValue = (k, v) => { store.value = v; };
 globalThis.GM_registerMenuCommand = () => 1;
 globalThis.GM_unregisterMenuCommand = () => {};
-globalThis.window = { addEventListener() {} };
+const listeners = {};
+globalThis.window = { addEventListener(type, callback) { listeners[type] = callback; } };
 globalThis.document = {
   querySelectorAll: () => [],
   createElement: () => ({
@@ -82,7 +83,10 @@ ok(T.visibleRowCount(fakeTable({ tbodies: [] })) === 0, '无 tbody 计 0');
 ok(T.visibleRowCount(fakeTable({ tbodies: [tbody([row('none'), row('none')])] })) === 0, '全部行隐藏计 0');
 
 // isTableHidden：hidden 类与计算样式双判定
-ok(T.isTableHidden(fakeTable({ cls: 'table table-zebra table-sm hidden' })), '含 hidden 类应判隐藏');
+ok(T.isTableHidden(fakeTable({ cls: 'table table-zebra table-sm hidden', display: 'none' })), 'hidden 实际生效时应判隐藏');
+ok(!T.isTableHidden(fakeTable({ cls: 'hidden md:table', display: 'table' })), '响应式覆盖 hidden 后表格应显示');
+ok(typeof listeners.resize === 'function', '窗口变化时应刷新统计');
+ok(typeof listeners.load === 'function', '样式等资源加载后应刷新统计');
 ok(T.isTableHidden(fakeTable({ display: 'none' })), '计算样式 display:none 应判隐藏');
 ok(!T.isTableHidden(fakeTable({ cls: 'table table-zebra', display: 'block' })), '正常表格不判隐藏');
 ok(!T.isTableHidden(fakeTable({ display: 'table' })), 'display:table 不判隐藏');
@@ -117,11 +121,23 @@ ok(table.parentNode.calls === 1, '徽标已存在时不应重复插入');
 
 // 表格隐藏（示例中的 hidden 类）→ 徽标同步隐藏；再显示 → 恢复
 table.classList = { contains: (c) => c === 'hidden' };
+table.__display = 'none';
 T2.updateBadge(table);
 ok(badge.style.display === 'none', '表格隐藏时徽标应隐藏');
 table.classList = { contains: () => false };
+table.__display = 'table';
 T2.updateBadge(table);
 ok(badge.style.display === '', '表格恢复显示时徽标应恢复');
+
+// 相邻表格不能越过前一个表格，复用它的徽标。
+const secondTable = fakeTable({ tbodies: [tbody([row()])] });
+secondTable.previousElementSibling = table;
+table.hasAttribute = () => false;
+secondTable.parentNode = fakeParent();
+T2.updateBadge(secondTable);
+ok(secondTable.parentNode.calls === 1, '相邻的第二张表格应插入独立徽标');
+ok(secondTable.parentNode.inserted.textContent === '共 1 条', '第二张表格独立计数');
+ok(badge.textContent === '共 4 条', '第二张表格不能覆盖第一张的统计');
 
 // 开关关闭 → 徽标隐藏并持久化；重新注入脚本后仍读到关闭状态
 T2.setEnabled(false);
