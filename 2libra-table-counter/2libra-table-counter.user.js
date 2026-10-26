@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         2libra 表格条数统计
 // @namespace    https://vhxubo.local/2libra-table-counter
-// @version      1.0.1
-// @description  在 2libra.com 给页面里所有 table 组件（金币流水等）加一行「共 N 条」统计徽标：表格数据增删、异步加载、翻页筛选、SPA 路由切换时实时同步；徽标插在表格正前方、内联样式不依赖站点类名，表格隐藏（如响应式切换）时徽标同步隐藏；只统计可见行（display:none 的行不计），油猴菜单一键开关并持久化。
+// @version      1.0.2
+// @description  仅在 2libra.com/coins 金币页面给表格添加「共 N 条」统计；支持异步加载、翻页筛选和 SPA 路由切换，只统计未被 display:none 隐藏的行，油猴菜单开关持久化。
 // @author       vhxubo
 // @match        https://2libra.com/*
 // @run-at       document-idle
@@ -122,9 +122,10 @@
   }
 
   // ---------- 扫描 ----------
-  // 覆盖所有带 tbody 的 table；新表格出现（SPA 路由/异步渲染）由全局观察器触发重扫
+  // 保留全站 @match，确保从其他页面通过 SPA 进入 /coins 时也能生效。
+  // 实际统计仅在金币页执行，离开后清理徽标。
   function sweep() {
-    if (!enabled) {
+    if (!enabled || !/^\/coins\/?$/.test(window.location.pathname)) {
       removeAllBadges();
       return;
     }

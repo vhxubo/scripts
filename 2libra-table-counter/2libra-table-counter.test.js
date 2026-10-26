@@ -15,7 +15,7 @@ globalThis.GM_setValue = (k, v) => { store.value = v; };
 globalThis.GM_registerMenuCommand = () => 1;
 globalThis.GM_unregisterMenuCommand = () => {};
 const listeners = {};
-globalThis.window = { addEventListener(type, callback) { listeners[type] = callback; } };
+globalThis.window = { location: { pathname: '/coins' }, addEventListener(type, callback) { listeners[type] = callback; } };
 globalThis.document = {
   querySelectorAll: () => [],
   createElement: () => ({
@@ -33,7 +33,7 @@ globalThis.getComputedStyle = (el) => ({ display: el.__display === undefined ? '
 
 // ---- 把内部函数导出注入 IIFE 末尾 ----
 const EXPORT =
-  ';globalThis.__t={visibleRowCount,isTableHidden,formatCount,loadEnabled,setEnabled,updateBadge,badgeFor,isEnabled:()=>enabled};';
+  ';globalThis.__t={sweep,visibleRowCount,isTableHidden,formatCount,loadEnabled,setEnabled,updateBadge,badgeFor,isEnabled:()=>enabled};';
 const closer = '})();';
 const last = src.lastIndexOf(closer);
 if (last === -1) { console.error('未找到 IIFE 结束标记'); process.exit(1); }
@@ -154,6 +154,24 @@ ok(store.value === true, '重新开启应写回存储');
 const detached = fakeTable({ tbodies: [tbody([row()])] });
 T3.updateBadge(detached);
 ok(true, '未挂载表格不应抛错');
+
+// SPA 路由切换：仅金币页统计，离开时清除。
+const scopedTable = fakeTable({ tbodies: [tbody([row()])] });
+scopedTable.parentNode = fakeParent();
+let removed = 0;
+document.querySelectorAll = (selector) => selector === 'table'
+  ? [scopedTable] : [{ remove() { removed++; } }];
+for (const pathname of ['/', '/coins/history', '/coins-other']) {
+  window.location.pathname = pathname;
+  T3.sweep();
+}
+ok(scopedTable.parentNode.calls === 0, '其他页面及相似路径不应创建统计');
+ok(removed === 3, '离开金币页面应移除统计');
+for (const pathname of ['/coins', '/coins/']) {
+  window.location.pathname = pathname;
+  T3.sweep();
+}
+ok(scopedTable.parentNode.calls === 2, '进入金币页面及尾斜杠路径应统计');
 
 function setStored(v) { store.value = v; }
 
