@@ -70,9 +70,9 @@ function ok(cond, msg) {
 }
 
 // formatCount
-ok(T.formatCount(21) === '共 21 条', '21 行应格式化为「共 21 条」');
-ok(T.formatCount(0) === '共 0 条', '空表应格式化为「共 0 条」');
-ok(T.formatCount(1) === '共 1 条', '单行应格式化为「共 1 条」');
+ok(T.formatCount(21) === '当前页 21 条', '21 行应格式化为「当前页 21 条」');
+ok(T.formatCount(0) === '当前页 0 条', '空表应格式化为「当前页 0 条」');
+ok(T.formatCount(1) === '当前页 1 条', '单行应格式化为「当前页 1 条」');
 
 // visibleRowCount：多 tbody 求和、跳过 display:none 行
 ok(T.visibleRowCount(fakeTable({ tbodies: [tbody([row(), row(), row()])] })) === 3, '三个可见行计 3');
@@ -108,7 +108,7 @@ table.parentNode = fakeParent();
 T2.updateBadge(table);
 const badge = table.parentNode.inserted;
 ok(!!badge, '首章更新应插入徽标');
-ok(badge.textContent === '共 2 条', '徽标文案应为可见行数（3 行中 1 行隐藏）');
+ok(badge.textContent === '当前页 2 条', '徽标文案应为可见行数（3 行中 1 行隐藏）');
 ok(badge.style.display === '', '表格可见且开关开启时徽标显示');
 ok(table.parentNode.ref === table, '徽标应插在表格正前方');
 
@@ -116,7 +116,7 @@ ok(table.parentNode.ref === table, '徽标应插在表格正前方');
 table.previousElementSibling = badge;
 table.tBodies[0].rows.push(row(), row());
 T2.updateBadge(table);
-ok(badge.textContent === '共 4 条', '新增 2 行后总数应同步为 4');
+ok(badge.textContent === '当前页 4 条', '新增 2 行后当前页条数应同步为 4');
 ok(table.parentNode.calls === 1, '徽标已存在时不应重复插入');
 
 // 表格隐藏（示例中的 hidden 类）→ 徽标同步隐藏；再显示 → 恢复
@@ -136,8 +136,8 @@ table.hasAttribute = () => false;
 secondTable.parentNode = fakeParent();
 T2.updateBadge(secondTable);
 ok(secondTable.parentNode.calls === 1, '相邻的第二张表格应插入独立徽标');
-ok(secondTable.parentNode.inserted.textContent === '共 1 条', '第二张表格独立计数');
-ok(badge.textContent === '共 4 条', '第二张表格不能覆盖第一张的统计');
+ok(secondTable.parentNode.inserted.textContent === '当前页 1 条', '第二张表格独立计数');
+ok(badge.textContent === '当前页 4 条', '第二张表格不能覆盖第一张的统计');
 
 // 开关关闭 → 徽标隐藏并持久化；重新注入脚本后仍读到关闭状态
 T2.setEnabled(false);

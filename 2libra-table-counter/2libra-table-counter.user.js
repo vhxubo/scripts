@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         2libra 表格条数统计
 // @namespace    https://vhxubo.local/2libra-table-counter
-// @version      1.0.2
-// @description  仅在 2libra.com/coins 金币页面给表格添加「共 N 条」统计；支持异步加载、翻页筛选和 SPA 路由切换，只统计未被 display:none 隐藏的行，油猴菜单开关持久化。
+// @version      1.0.3
+// @description  仅在 2libra.com/coins 金币页面给表格添加「当前页 N 条」统计；支持异步加载、翻页筛选和 SPA 路由切换，只统计未被 display:none 隐藏的行，油猴菜单开关持久化。
 // @author       vhxubo
 // @match        https://2libra.com/*
 // @run-at       document-idle
@@ -73,7 +73,7 @@
   }
 
   function formatCount(n) {
-    return `共 ${n} 条`;
+    return `当前页 ${n} 条`;
   }
 
   // ---------- 徽标 ----------

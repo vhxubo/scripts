@@ -1,11 +1,11 @@
 # 2libra 表格条数统计（2libra Table Counter）
 
-A Tampermonkey userscript for [2libra.com](https://2libra.com/): every `table` component on the `/coins` page gets a live「共 N 条」row-count badge rendered just above it, and the number re-syncs the moment the table data changes.
+A Tampermonkey userscript for [2libra.com](https://2libra.com/): every `table` component on the `/coins` page gets a live「当前页 N 条」row-count badge rendered just above it, and the number re-syncs the moment the table data changes.
 
 ## ✨ Features
 
 - **Coins page only** - Only `/coins` (including a trailing slash, query or hash) shows counts; leaving the page removes the badges. The site-wide `@match` supports SPA navigation into the coins page
-- **Counts every table** - Sweeps the whole page for `table` elements with a `tbody` and injects a right-aligned badge (`共 N 条`) directly in front of each one — no site classes depended on, inline styles only
+- **Counts every table** - Sweeps the whole page for `table` elements with a `tbody` and injects a right-aligned badge (`当前页 N 条`) directly in front of each one — no site classes depended on, inline styles only
 - **Live sync** - A single `MutationObserver` on `document.documentElement` (`childList` + `class`/`hidden` attribute changes, rAF-debounced) re-counts on every data change: async loads, pagination, filtering, re-renders and SPA route switches all update the total immediately
 - **Visible rows only** - Rows hidden via CSS (`display: none`) are excluded from the count, so the number always reflects what's actually shown
 - **Hidden-table aware** - When a table is toggled away (e.g. the site's responsive `hidden` swap between table and card views) its badge hides too, and comes back with the table
@@ -18,7 +18,7 @@ A Tampermonkey userscript for [2libra.com](https://2libra.com/): every `table` c
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/)
 2. Create a new userscript, paste in `2libra-table-counter.user.js`, save
-3. Open https://2libra.com/coins — the「共 N 条」badge appears above it and follows every data change
+3. Open https://2libra.com/coins — the「当前页 N 条」badge appears above it and follows every data change
 
 When upgrading, replace the installed userscript with the latest version and refresh the page.
 
