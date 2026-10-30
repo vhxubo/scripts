@@ -65,23 +65,29 @@
     return baseCost(len);
   }
 
-  // 从 /api/badges/my 的列表里挑出两类评论费用徽章（各取第一枚）
+  // 从 /api/badges/my 的列表里挑出两类评论费用徽章；同类多枚时保留更省的一枚。
+  // 只认 comment_cost / comment_cost_percent 字段，站内其他 attributes
+  // （float_percent、coin_system_cost_percent 等）不会被误判
   function classifyBadges(list) {
     const out = { fixed: null, percent: null };
     for (const ub of Array.isArray(list) ? list : []) {
       const attr = ub && ub.badge && ub.badge.attributes;
       if (!attr) continue;
-      if (!out.fixed && typeof attr.comment_cost === 'number') out.fixed = ub;
-      else if (!out.percent && typeof attr.comment_cost_percent === 'number') out.percent = ub;
+      if (typeof attr.comment_cost === 'number') {
+        if (!out.fixed || Math.abs(attr.comment_cost) < Math.abs(out.fixed.badge.attributes.comment_cost)) out.fixed = ub;
+      } else if (typeof attr.comment_cost_percent === 'number') {
+        if (!out.percent || attr.comment_cost_percent > out.percent.badge.attributes.comment_cost_percent) out.percent = ub;
+      }
     }
     return out;
   }
 
-  // 推荐更省的一枚；没有相关徽章时返回 null
+  // 推荐更省的一枚；没有相关徽章、或候选都比不戴贵时返回 null
   function recommend(len, p) {
     const cands = [p.fixed, p.percent].filter(Boolean);
     if (!cands.length) return null;
-    return cands.reduce((a, b) => (badgeCost(len, b) < badgeCost(len, a) ? b : a));
+    const best = cands.reduce((a, b) => (badgeCost(len, b) < badgeCost(len, a) ? b : a));
+    return badgeCost(len, best) < baseCost(len) ? best : null;
   }
 
   // 当前佩戴的两类徽章之一（都没有则 null）
@@ -95,7 +101,7 @@
     const curCost = badgeCost(len, cur);
     const m = {
       count: `${len} 字`,
-      status: `当前：${cur ? cur.badge.name : '无费用徽章'} · 发评约 ${curCost} 金币`,
+      status: `当前：${cur ? cur.badge.name : '未佩戴费用徽章'} · 发评约 ${curCost} 金币`,
       hint: '',
       warn: false,
       target: null,

@@ -64,6 +64,8 @@ function eq(actual, expected, label) {
 }
 
 // ---- baseCost 阶梯边界 ----
+// 官方分段税（无徽章）：超 100/1000/2000/5000 字扣 30/60/120/200，≤100 字扣 10；
+// 发帖与评论同表，编辑/附言维持各自费率不走此表
 eq(T.baseCost(0), 10, 'baseCost(0) = 10');
 eq(T.baseCost(100), 10, 'baseCost(100) = 10（含 100）');
 eq(T.baseCost(101), 30, 'baseCost(101) = 30');
@@ -95,6 +97,30 @@ eq(c2.percent, null, '无费用徽章时 percent=null');
 const c3 = T.classifyBadges(null);
 eq(c3.fixed, null, '非数组输入容错');
 
+// ---- classifyBadges：真实站点其他 attributes 形态不误判 ----
+// 采样自站内真实用户徽章库：混沌/卡皮巴拉/捣蛋鬼/马上来/走个面等非评论费用字段
+const REAL_OTHERS = [
+  { badge_id: 'u-hundun', badge: { name: '混沌', attributes: { badge_name: '混沌', float_percent: 0.5 } } },
+  { badge_id: 'u-capy', badge: { name: '卡皮巴拉', attributes: { badge_name: '卡皮巴拉', capybara_rate: 0.1 } } },
+  { badge_id: 'u-dann', badge: { name: '捣蛋鬼', attributes: { badge_name: '捣蛋鬼', reverse_coins_rate: 0.34, reverse_large_coins_rate: 0.15 } } },
+  { badge_id: 'u-mashang', badge: { name: '马上来', attributes: { badge_name: '马上来', coin_system_cost_percent: 0.05 } } },
+  { badge_id: 'u-zou', badge: { name: '走个面', attributes: { daily_active_gain_percent: 0.2 } } },
+  { badge_id: 'u-zhou', badge: { name: '2Libra 一周年！', attributes: null } },
+];
+const c4 = T.classifyBadges(REAL_OTHERS);
+eq(c4.fixed, null, '非评论费用字段不误判为固定徽章');
+eq(c4.percent, null, 'coin_system_cost_percent 等近似字段不误判为减免徽章');
+const c5 = T.classifyBadges([...REAL_OTHERS, PERCENT]);
+eq(c5.percent && c5.percent.badge_id, PERCENT.badge_id, '混杂其他徽章时仍准确识别减免徽章（真实单 percent 用户形态）');
+eq(c5.fixed, null, '真实单 percent 用户 fixed=null');
+
+// ---- classifyBadges：同类多枚保留更省的一枚 ----
+const FIXED2 = { badge_id: 'fixed-2', badge: { name: '固定贵', attributes: { comment_cost: -12 } } };
+const PERCENT2 = { badge_id: 'percent-2', badge: { name: '减免少', attributes: { comment_cost_percent: 0.1 } } };
+const c6 = T.classifyBadges([FIXED2, FIXED, PERCENT2, PERCENT]);
+eq(c6.fixed && c6.fixed.badge_id, FIXED.badge_id, '多枚固定徽章取扣费更低的');
+eq(c6.percent && c6.percent.badge_id, PERCENT.badge_id, '多枚减免徽章取减免更多的');
+
 // ---- recommend：盈亏平衡点在 100 字 ----
 const PAIR = { fixed: FIXED, percent: PERCENT };
 eq(T.recommend(0, PAIR).badge_id, PERCENT.badge_id, '0 字推荐减免徽章');
@@ -103,6 +129,9 @@ eq(T.recommend(101, PAIR).badge_id, FIXED.badge_id, '101 字推荐固定徽章�
 eq(T.recommend(4000, PAIR).badge_id, FIXED.badge_id, '长文本推荐固定徽章');
 eq(T.recommend(80, { fixed: FIXED, percent: null }).badge_id, FIXED.badge_id, '只有固定徽章时推荐它');
 eq(T.recommend(80, { fixed: null, percent: null }), null, '两类都缺时返回 null');
+// 候选比不戴还贵时不推荐（当前站点无此数据，防御未来徽章）
+eq(T.recommend(80, { fixed: FIXED2, percent: null }), null, '唯一候选贵于基础费用时不推荐');
+eq(T.recommend(80, { fixed: FIXED2, percent: PERCENT }).badge_id, PERCENT.badge_id, '贵候选让位给省的');
 
 // ---- currentCostBadge ----
 eq(T.currentCostBadge(PAIR, new Set([FIXED.badge_id])).badge_id, FIXED.badge_id, '当前佩戴固定徽章');
@@ -132,14 +161,27 @@ eq(m4.warn, false, '超 100 字戴固定徽章不告警');
 eq(m4.hint, '✓ 当前最省', '固定徽章长文本最优');
 
 const m5 = T.barModel(60, PAIR, new Set([PLAIN.badge_id]));
-eq(m5.status, '当前：无费用徽章 · 发评约 10 金币', '佩戴普通徽章走基础费用');
+eq(m5.status, '当前：未佩戴费用徽章 · 发评约 10 金币', '佩戴普通徽章走基础费用');
 eq(m5.btn, '切换「都听我说！」（7 金币）', '推荐切到减免徽章');
 
 const m6 = T.barModel(60, { fixed: null, percent: null }, new Set());
-eq(m6.status, '当前：无费用徽章 · 发评约 10 金币', '无徽章数据时仍展示基础费用');
+eq(m6.status, '当前：未佩戴费用徽章 · 发评约 10 金币', '无徽章数据时仍展示基础费用');
 eq(m6.target, null, '无徽章数据时无切换目标');
 eq(m6.hint, '', '两枚费用徽章都缺时不误报「当前最省」');
 eq(m6.warn, false, '两枚费用徽章都缺时不告警');
+
+// ---- 无徽章用户：官方分段税全档文案（超 100/1000/2000/5000 → 30/60/120/200） ----
+const NO_BADGE = { fixed: null, percent: null };
+for (const [len, cost] of [[60, 10], [100, 10], [101, 30], [1000, 30], [1001, 60], [2001, 120], [5001, 200]]) {
+  const m = T.barModel(len, NO_BADGE, new Set());
+  eq(m.status, `当前：未佩戴费用徽章 · 发评约 ${cost} 金币`, `无徽章 ${len} 字显示分段税 ${cost}`);
+  eq(m.btn, '', `无徽章 ${len} 字无切换按钮`);
+  eq(m.target, null, `无徽章 ${len} 字无切换目标`);
+  eq(m.warn, false, `无徽章 ${len} 字不告警`);
+}
+// 无徽章用户佩戴着其他普通徽章：同样按分段税计算
+const m7 = T.barModel(3000, NO_BADGE, new Set([PLAIN.badge_id]));
+eq(m7.status, '当前：未佩戴费用徽章 · 发评约 120 金币', '佩戴普通徽章不影响分段税');
 
 // ---- jwtDecode ----
 const jwt = 'aaa.' +

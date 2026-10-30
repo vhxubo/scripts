@@ -4,7 +4,7 @@ A Tampermonkey userscript for [2libra.com](https://2libra.com/): a live helper b
 
 ## 💡 Background
 
-Posting a comment on 2libra costs coins on a length tier (mirrored from the site's own frontend `COIN_COST.comment`):
+Posting a comment (or a post — same table) on 2libra costs coins on a length tier. The tiers below are confirmed by the site's official rules (发帖/评论分段税：超 100/1000/2000/5000 字扣 30/60/120/200) and match the site frontend's `COIN_COST.comment` exactly; editing and postscripts keep their own separate rates:
 
 | Characters | Base cost |
 | :--- | :--- |
@@ -13,6 +13,8 @@ Posting a comment on 2libra costs coins on a length tier (mirrored from the site
 | 1001 – 2000 | 60 coins |
 | 2001 – 5000 | 120 coins |
 | > 5000 | 200 coins |
+
+Users owning **neither** badge simply get the live char count plus the correct tier cost on the bar (e.g. 「当前：未佩戴费用徽章 · 发评约 30 金币」) — no buttons, no warnings, nothing misleading.
 
 Two badge kinds modify that cost:
 
@@ -29,6 +31,7 @@ So the break-even is exactly 100 characters: below it the percent badge wins (10
 - **Over-100 warning + quick switch** — typing past 100 chars while wearing the percent badge turns the count red, shows「⚠️ 超 100 字，减免 30% 不再划算」and a one-click「切换『前排打手』（8 金币）」button
 - **Alt+B hotkey** — toggles between the two cost badges from anywhere on the page; if you currently wear neither, it equips the recommended one
 - **Real API integration** — badges are fetched from `/api/badges/my`, current equipment from `/api/badges/user/:uuid/equipped` (uuid = JWT `sub`), switching posts `{badge_id, equip}` to `/api/badges/equip` with the `access_token` cookie as Bearer auth — exactly what the site's own badge page does
+- **Recognition is field-exact** — badges are matched only on `attributes.comment_cost` / `attributes.comment_cost_percent`; other real-world attribute shapes sampled from the site (`float_percent`, `capybara_rate`, `coin_system_cost_percent`, …) are ignored. Users owning just one of the two badges (or neither) get a correctly degraded bar — the lone badge is still recommended whenever it beats wearing nothing
 - **Cost check** — `/api/badges/equip/check-cost` is consulted before every switch; if the site would charge for it you get a confirm dialog first
 - **Cross-tab aware** — re-syncs equipped state on tab focus, after every switch, and via the Tampermonkey menu
 - **Degraded mode** — not logged in or API errors? The bar still shows the char count and base-tier cost
