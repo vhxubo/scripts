@@ -138,6 +138,8 @@ eq(m5.btn, '切换「都听我说！」（7 金币）', '推荐切到减免徽�
 const m6 = T.barModel(60, { fixed: null, percent: null }, new Set());
 eq(m6.status, '当前：无费用徽章 · 发评约 10 金币', '无徽章数据时仍展示基础费用');
 eq(m6.target, null, '无徽章数据时无切换目标');
+eq(m6.hint, '', '两枚费用徽章都缺时不误报「当前最省」');
+eq(m6.warn, false, '两枚费用徽章都缺时不告警');
 
 // ---- jwtDecode ----
 const jwt = 'aaa.' +

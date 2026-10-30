@@ -103,8 +103,8 @@
     };
     const best = recommend(len, p);
     if (!best || best === cur) {
-      // 没有可比项，或已是当前佩戴：仅在超过 100 字时提示基础规则
-      m.hint = best === cur ? '✓ 当前最省' : '';
+      // 没有可比项，或已是当前佩戴：两枚都缺时不给「最省」结论
+      m.hint = best && best === cur ? '✓ 当前最省' : '';
       return m;
     }
     const bestCost = badgeCost(len, best);
@@ -302,7 +302,9 @@
     countEl.style.fontWeight = model.warn ? '600' : '';
     setText(statusEl, model.status);
     setText(hintEl, model.hint + (model.hint ? ' · ' : '') + 'Alt+B 切换');
-    hintEl.style.color = model.warn ? '#dc2626' : model.hint.startsWith('✓') ? '#16a34a' : '#d97706';
+    hintEl.style.color = model.warn
+      ? '#dc2626'
+      : model.hint.startsWith('✓') ? '#16a34a' : model.hint ? '#d97706' : '';
     hintEl.style.fontWeight = model.warn ? '600' : '';
     if (busy) {
       setText(btnEl, '切换中…');
