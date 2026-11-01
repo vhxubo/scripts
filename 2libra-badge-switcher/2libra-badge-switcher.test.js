@@ -121,6 +121,15 @@ const c6 = T.classifyBadges([FIXED2, FIXED, PERCENT2, PERCENT]);
 eq(c6.fixed && c6.fixed.badge_id, FIXED.badge_id, '多枚固定徽章取扣费更低的');
 eq(c6.percent && c6.percent.badge_id, PERCENT.badge_id, '多枚减免徽章取减免更多的');
 
+// ---- classifyBadges：条目只有 badge.id 时归一化成 badge_id ----
+// /api/badges/my 若返回 {id, badge:{id}} 形态，切换请求不能发出 badge_id: undefined
+const ID_ONLY = { id: 'id-only', badge: { id: 'id-only', name: '都听我说！', attributes: { comment_cost_percent: 0.3 } } };
+const cId = T.classifyBadges([FIXED, ID_ONLY]);
+eq(cId.percent && cId.percent.badge_id, 'id-only', 'badge.id 归一化为 badge_id');
+eq(T.currentCostBadge(cId, new Set(['id-only'])).badge_id, 'id-only', '归一化后可匹配佩戴状态');
+const mIdOnly = T.barModel(20, cId, new Set([FIXED.badge_id]));
+eq(mIdOnly.target && mIdOnly.target.badge_id, 'id-only', '归一化后仍能给出切换目标');
+
 // ---- recommend：盈亏平衡点在 100 字 ----
 const PAIR = { fixed: FIXED, percent: PERCENT };
 eq(T.recommend(0, PAIR).badge_id, PERCENT.badge_id, '0 字推荐减免徽章');
@@ -153,7 +162,7 @@ eq(m2.target && m2.target.badge_id, PERCENT.badge_id, '切换目标为减免徽�
 
 const m3 = T.barModel(120, PAIR, new Set([PERCENT.badge_id]));
 eq(m3.warn, true, '超 100 字戴减免徽章触发告警');
-eq(m3.hint, '⚠️ 超 100 字，减免 30% 不再划算', '告警文案');
+eq(m3.hint, '⚠️ 减免 30% 不如固定 8 金币', '告警文案按徽章真实比例生成');
 eq(m3.btn, '切换「前排打手」（8 金币）', '快捷切换到固定徽章');
 
 const m4 = T.barModel(120, PAIR, new Set([FIXED.badge_id]));
@@ -169,6 +178,57 @@ eq(m6.status, '当前：未佩戴费用徽章 · 发评约 10 金币', '无徽�
 eq(m6.target, null, '无徽章数据时无切换目标');
 eq(m6.hint, '', '两枚费用徽章都缺时不误报「当前最省」');
 eq(m6.warn, false, '两枚费用徽章都缺时不告警');
+
+// ---- 动态文案：不再写死「减免 30%」「超 100 字」 ----
+// 站点真实徽章库还有 10%（种子用户）/ 15%（六边形战士）/ 30%（大平衡者）等档位
+const P10 = { badge_id: 'percent-10', badge: { name: '种子用户', attributes: { comment_cost_percent: 0.1 } } };
+const P15 = { badge_id: 'percent-15', badge: { name: '六边形战士', attributes: { comment_cost_percent: 0.15 } } };
+const m10 = T.barModel(120, { fixed: FIXED, percent: P10 }, new Set([P10.badge_id]));
+eq(m10.hint, '⚠️ 减免 10% 不如固定 8 金币', '10% 徽章按真实比例提示');
+eq(m10.btn, '切换「前排打手」（8 金币）', '10% 徽章切到固定徽章');
+eq(m10.warn, true, '10% 徽章超长时告警');
+const m15 = T.barModel(150, { fixed: FIXED, percent: P15 }, new Set([P15.badge_id]));
+eq(m15.hint, '⚠️ 减免 15% 不如固定 8 金币', '15% 徽章按真实比例提示');
+// 10% 徽章 50 字时 9 > 8 已经不划算，不该只在 >100 字才提醒
+const m10s = T.barModel(50, { fixed: FIXED, percent: P10 }, new Set([P10.badge_id]));
+eq(m10s.warn, true, '10% 徽章 50 字已不划算也告警');
+eq(m10s.target && m10s.target.badge_id, FIXED.badge_id, '10% 徽章 50 字应切到固定徽章');
+// 加价徽章（comment_cost_percent 为负）不推荐、不误报最省
+const P_NEG = { badge_id: 'percent-neg', badge: { name: '夜猫', attributes: { comment_cost_percent: -0.2 } } };
+eq(T.recommend(50, { fixed: null, percent: P_NEG }), null, '加价徽章不推荐');
+const mNeg = T.barModel(50, { fixed: null, percent: P_NEG }, new Set([P_NEG.badge_id]));
+eq(mNeg.warn, true, '戴着加价徽章要告警');
+eq(mNeg.target, null, '加价徽章不给切换目标');
+
+// ---- 同价并列：不再给「可省 0 金币」的无意义按钮 ----
+const F7 = { badge_id: 'fixed-7', badge: { name: '固定7', attributes: { comment_cost: -7 } } };
+const mTie = T.barModel(50, { fixed: F7, percent: PERCENT }, new Set([PERCENT.badge_id]));
+eq(mTie.hint, '✓ 当前最省', '同价视为已最省');
+eq(mTie.target, null, '同价无切换目标');
+eq(mTie.btn, '', '同价无切换按钮');
+eq(mTie.warn, false, '同价不告警');
+
+// ---- 比不戴更贵：给出「摘下」动作，而不是无路可走 ----
+// 复用上面的 FIXED2（固定 12 金币），50 字基础只需 10 金币
+const mBad = T.barModel(50, { fixed: FIXED2, percent: null }, new Set([FIXED2.badge_id]));
+eq(mBad.unequip && mBad.unequip.badge_id, FIXED2.badge_id, '比不戴更贵时给出摘下目标');
+eq(mBad.warn, true, '比不戴更贵时告警');
+eq(mBad.target, null, '摘下时不给切换目标');
+eq(mBad.btn, '摘下「固定贵」（省 2 金币）', '摘下按钮文案');
+// 同价（站点「篝火」恒定 10 金币）不算更贵，也不建议摘下
+const F10 = { badge_id: 'fixed-10', badge: { name: '篝火', attributes: { comment_cost: -10 } } };
+const mEq = T.barModel(50, { fixed: F10, percent: null }, new Set([F10.badge_id]));
+eq(mEq.unequip, null, '同价徽章不建议摘下');
+eq(mEq.hint, '✓ 当前最省', '同价徽章视为最省');
+
+// ---- 两枚费用徽章同时佩戴：明确提示估算不准并给出摘下动作 ----
+const mDual = T.barModel(150, PAIR, new Set([FIXED.badge_id, PERCENT.badge_id]));
+eq(mDual.warn, true, '两枚同戴告警');
+eq(mDual.unequip && mDual.unequip.badge_id, PERCENT.badge_id, '两枚同戴摘下当次不划算的那枚');
+eq(mDual.target, null, '两枚同戴不给切换目标');
+eq(mDual.status.includes('同戴'), true, '状态栏标注两枚同戴');
+const mDualShort = T.barModel(50, PAIR, new Set([FIXED.badge_id, PERCENT.badge_id]));
+eq(mDualShort.unequip && mDualShort.unequip.badge_id, FIXED.badge_id, '短文本时摘下固定徽章');
 
 // ---- 无徽章用户：官方分段税全档文案（超 100/1000/2000/5000 → 30/60/120/200） ----
 const NO_BADGE = { fixed: null, percent: null };
@@ -215,6 +275,10 @@ globalThis.document.cookie = 'a=1; access_token=TOK; refresh_token=R';
 eq(T.readCookie('access_token'), 'TOK', '读取 access_token');
 globalThis.document.cookie = '';
 eq(T.readCookie('access_token'), '', '无 cookie 时返回空串');
+// 非法百分号编码不能让 decodeURIComponent 抛错打断初始化（否则徽章永远加载不出来）
+globalThis.document.cookie = 'access_token=%E0%A4%A';
+eq(T.readCookie('access_token'), '', '非法百分号编码返回空串而不是抛异常');
+globalThis.document.cookie = '';
 
 console.log(`\n${passed} 通过, ${failed} 失败`);
 process.exit(failed ? 1 : 0);

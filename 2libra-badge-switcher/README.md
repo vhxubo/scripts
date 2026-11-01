@@ -21,20 +21,21 @@ Two badge kinds modify that cost:
 - **Fixed-cost badge** (`attributes.comment_cost`, e.g. 「前排打手」) — a flat **8 coins** no matter the length
 - **Percent-off badge** (`attributes.comment_cost_percent`, e.g. 「都听我说！」) — **30% off** the base tier
 
-So the break-even is exactly 100 characters: below it the percent badge wins (10 → 7 < 8), above it the flat badge wins (30 → 21 > 8). The script tracks this for you.
+So for this pair the break-even is 100 characters: below it the percent badge wins (10 → 7 < 8), above it the flat badge wins (30 → 21 > 8). The script does **not** hardcode that number: it recomputes the break-even from the two badges' real attributes on every keystroke, so the site's other percent badges (10% / 15% / 30%) and flat badges (8 / 10 coins) are handled the same way — and so is a badge that makes comments *more* expensive.
 
 ## ✨ Features
 
 - **Live char count** — the bar re-renders on every keystroke in any comment editor on the page (bottom composer, reply boxes), powered by a capture-phase `input` listener + one rAF-debounced `MutationObserver`
 - **Cost estimate** — shows your current badge and the coins the comment would cost, computed from the same tier table the site's frontend uses
-- **Smart recommendation** — whichever of your two cost badges is cheaper for the current length; when you already wear it you get a green「✓ 当前最省」
-- **Over-100 warning + quick switch** — typing past 100 chars while wearing the percent badge turns the count red, shows「⚠️ 超 100 字，减免 30% 不再划算」and a one-click「切换『前排打手』（8 金币）」button
-- **Alt+B hotkey** — toggles between the two cost badges from anywhere on the page; if you currently wear neither, it equips the recommended one
-- **Real API integration** — badges are fetched from `/api/badges/my`, current equipment from `/api/badges/user/:uuid/equipped` (uuid = JWT `sub`), switching posts `{badge_id, equip}` to `/api/badges/equip` with the `access_token` cookie as Bearer auth — exactly what the site's own badge page does
+- **Smart recommendation** — whichever of your two cost badges is cheaper for the current length; when you already wear it you get a green「✓ 当前最省」, and equal-cost pairs no longer produce a pointless「可省 0 金币」switch button
+- **Dynamic warning + quick action** — the red warning is generated from the badge's actual attribute (e.g.「⚠️ 减免 10% 不如固定 8 金币」) and fires whenever the percent badge stops being the cheaper choice, not at a hardcoded 100-char threshold; the button switches to the cheaper badge, or offers「摘下」when your worn badge costs more than wearing nothing
+- **Dual-equip detection** — if both cost badges end up equipped (the site allows coexistence, or an unequip call fails), the bar says so, warns that the estimate may be off, and offers to remove the redundant one instead of silently pretending only one is worn
+- **Alt+B hotkey** — keeps the cheaper badge: it switches only when the other badge is actually cheaper, does nothing (with a toast) when you are already optimal, and unequips when your worn badge is worse than wearing nothing or when two cost badges are equipped at once
+- **Real API integration** — badges are fetched from `/api/badges/my`, current equipment from `/api/badges/user/:uuid/equipped` (uuid = JWT `sub`), switching posts `{badge_id, equip}` to `/api/badges/equip` with the `access_token` cookie as Bearer auth — exactly what the site's own badge page does. Badge entries that only carry `badge.id` (instead of `badge_id`) are normalized, so a switch can never post `badge_id: undefined`
 - **Recognition is field-exact** — badges are matched only on `attributes.comment_cost` / `attributes.comment_cost_percent`; other real-world attribute shapes sampled from the site (`float_percent`, `capybara_rate`, `coin_system_cost_percent`, …) are ignored. Users owning just one of the two badges (or neither) get a correctly degraded bar — the lone badge is still recommended whenever it beats wearing nothing
 - **Cost check** — `/api/badges/equip/check-cost` is consulted before every switch; if the site would charge for it you get a confirm dialog first
-- **Cross-tab aware** — re-syncs equipped state on tab focus, after every switch, and via the Tampermonkey menu
-- **Degraded mode** — not logged in or API errors? The bar still shows the char count and base-tier cost
+- **Cross-tab aware** — re-syncs equipped state on tab focus, after every switch, and via the Tampermonkey menu (concurrent refreshes share one request)
+- **Degraded mode** — not logged in, API errors, or an undecodable `access_token` cookie? The bar still shows the char count and base-tier cost, and a malformed cookie can no longer break initialization
 - **Menu toggle** — Tampermonkey menu turns the helper on/off, persisted in GM storage
 
 ## 🚀 Getting Started
@@ -49,12 +50,13 @@ So the break-even is exactly 100 characters: below it the percent badge wins (10
 | :--- | :--- |
 | See char count & cost | Type in any comment editor; the bar above it updates live |
 | Switch to the cheaper badge | Click the「切换…」button on the bar, or press **Alt+B** |
+| Remove an over-priced / redundant badge | Click the「摘下…」button (also reachable with **Alt+B**) |
 | Refresh badge data | Tampermonkey menu → 重新拉取徽章数据 |
 | Hide / show the bar | Tampermonkey menu → 徽章助手：开启中（点击关闭） |
 
 ## 🧪 Testing
 
-Pure-logic tests (cost tiers, badge classification, recommendation break-even, bar copy for every scenario, JWT decode incl. UTF-8 usernames, equipped-list normalization, route matching, cookie reading) run in Node against the real script source:
+Pure-logic tests (cost tiers, badge classification incl. `badge.id` normalization, recommendation break-even, dynamic percent copy, equal-cost pairs, dual-equip and「摘下」decisions, bar copy for every scenario, JWT decode incl. UTF-8 usernames, equipped-list normalization, route matching, cookie reading incl. malformed encoding) run in Node against the real script source:
 
 ```bash
 node 2libra-badge-switcher.test.js
@@ -64,5 +66,6 @@ node 2libra-badge-switcher.test.js
 
 - The estimate covers **posting** comments; editing a comment has a different (slightly cheaper) tier and is not modeled
 - The editor is detected via the site's `w-md-editor` markdown editor; if the site swaps editor libraries the selectors need updating
-- Flat + percent badges are assumed not to stack — switching equips the target and unequips the other one
+- Flat + percent badges are assumed not to stack — switching equips the target and unequips the other one; if the unequip call fails the bar surfaces it and offers a manual「摘下」rather than silently pretending the state changed
 - If the site starts charging for badge switches, you'll see a confirm dialog (via `check-cost`); the script never spends coins silently
+- The `access_token` must be a JS-readable cookie for the badge features to work; if the site makes it HttpOnly, the bar degrades to char count + base-tier cost
