@@ -2,6 +2,8 @@
 // 2libra 评论金币徽章助手 逻辑测试：直接读取同目录的 2libra-badge-switcher.user.js，
 // 注入测试导出后跑断言。运行：node 2libra-badge-switcher.test.js（无外部依赖）
 'use strict';
+// 固定时区：潘多拉截止时间按本地时间展示，测试断言 UTC+8 的文案
+process.env.TZ = 'Asia/Shanghai';
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -40,7 +42,7 @@ globalThis.requestAnimationFrame = () => {};
 
 // ---- 把内部函数导出注入 IIFE 末尾 ----
 const EXPORT =
-  ';globalThis.__t={baseCost,badgeCost,classifyBadges,recommend,currentCostBadge,barModel,jwtDecode,normalizeEquipped,isPostDetail,readCookie,getPair:()=>pair};';
+  ';globalThis.__t={baseCost,badgeCost,classifyBadges,recommend,currentCostBadge,barModel,jwtDecode,normalizeEquipped,isPostDetail,readCookie,pandoraActive,pandoraEffect,fmtTime,getPair:()=>pair};';
 const closer = '})();';
 const last = src.lastIndexOf(closer);
 if (last === -1) { console.error('未找到 IIFE 结束标记'); process.exit(1); }
@@ -279,6 +281,124 @@ eq(T.readCookie('access_token'), '', '无 cookie 时返回空串');
 globalThis.document.cookie = 'access_token=%E0%A4%A';
 eq(T.readCookie('access_token'), '', '非法百分号编码返回空串而不是抛异常');
 globalThis.document.cookie = '';
+
+// ---- 潘多拉事件：pandoraActive 生效窗口 ----
+// 载荷采样自 /api/pandora/today 与站点用户 pandora_info（2026-10-18 抽到「回归起点」的真实事件）
+const NOW = new Date('2026-11-02T12:00:00+08:00').getTime();
+const box = (over = {}) => Object.assign({
+  box_instance_id: 'bi-1',
+  event_code: 'badge_drop_lock',
+  event_name: '回归起点',
+  event_title: '当前佩戴的徽章失控掉落且下次开启潘多拉盒子前无法佩戴任何徽章（放心，你的徽章还在😁）。',
+  tier_code: 'bronze',
+  rarity: 'bronze',
+  rolled_value: 0,
+  apply_at: '2026-11-02T01:07:17.249Z',
+  expire_at: '2026-11-03T01:07:17.249Z',
+}, over);
+eq(T.pandoraActive(box(), NOW), true, '已生效未到期 → 生效中');
+eq(T.pandoraActive(null, NOW), false, '无盒子 → 未生效');
+eq(T.pandoraActive({}, NOW), false, '缺 event_code → 未生效');
+eq(T.pandoraActive(box({ apply_at: '2026-11-02T12:00:01+08:00' }), NOW), false, 'apply_at 未到 → 待生效');
+eq(T.pandoraActive(box({ expire_at: '2026-11-02T11:59:59+08:00' }), NOW), false, 'expire_at 已过 → 已结束');
+eq(T.pandoraActive(box({ apply_at: null }), NOW), true, '缺 apply_at 视为已生效');
+
+// ---- 潘多拉事件：pandoraEffect 各事件解析 ----
+const fx = (over) => T.pandoraEffect(box(over), NOW);
+// 回归起点：徽章掉落锁定
+const eDrop = fx();
+eq(eDrop.active, true, '回归起点解析为生效');
+eq(eDrop.lockBadge, true, '回归起点 → 锁徽章');
+eq(eDrop.fixedCost, null, '回归起点无固定费用');
+eq(eDrop.name, '回归起点', '事件名透传');
+// 妙笔生花：固定费用（rolled_value 优先）
+const eFixed = fx({ event_code: 'fixed_text_cost', event_name: '妙笔生花', event_title: '发帖和评论的金币费用固定为 6 金币。', rolled_value: 6 });
+eq(eFixed.fixedCost, 6, '妙笔生花 rolled_value = 6');
+const eFixedParse = fx({ event_code: 'fixed_text_cost', event_name: '妙笔生花', event_title: '发帖和评论的金币费用固定为 1 金币。', rolled_value: null });
+eq(eFixedParse.fixedCost, 1, '妙笔生花缺 rolled_value 时从文案解析为 1');
+eq(eFixedParse.freeComment, false, '妙笔生花不是免费评论');
+// 金币升降机：±% 乘算
+const eMod = fx({ event_code: 'coin_modifier_percent', event_name: '金币升降机', event_title: '大部分金币变动 -17%，收益少一点，花费也少一点。', rolled_value: -17 });
+eq(eMod.modifierPct, -17, '金币升降机 -17%');
+const eModUp = fx({ event_code: 'coin_modifier_percent', event_name: '金币升降机', event_title: '大部分金币变动 +40%，收益多一点，花费也多一点。', rolled_value: null });
+eq(eModUp.modifierPct, 40, '金币升降机 +40% 从文案解析');
+// 多说多写：gold 档免评论费 + 最少字数；bronze 档只有字数约束
+const eMinGold = fx({ event_code: 'comment_min_length', event_name: '多说多写', event_title: '评论回复只能输入 10 个字以上。有失有得，生效期间，评论不扣除金币。', rolled_value: 10 });
+eq(eMinGold.freeComment, true, '多说多写 gold 文案含「不扣除金币」→ 免费评论');
+eq(eMinGold.minLength, 10, '多说多写最少 10 字（rolled_value）');
+const eMinBronze = fx({ event_code: 'comment_min_length', event_name: '多说多写', event_title: '评论回复只能输入 10 个字以上。', rolled_value: 10, tier_code: 'bronze' });
+eq(eMinBronze.freeComment, false, '多说多写 bronze 无免费文案');
+eq(eMinBronze.minLength, 10, '多说多写 bronze 仍有 10 字约束');
+// 小表情：需要自定义表情
+const eEmoji = fx({ event_code: 'comment_custom_emoji_required', event_name: '小表情', event_title: '评论需要包含至少一个自定义表情。', rolled_value: null });
+eq(eEmoji.needEmoji, true, '小表情 → 需要自定义表情');
+// comment_constraint 形态（pandora_info 侧字段）优先于文案解析
+const eCon = fx({ event_code: 'comment_min_length', comment_constraint: { min_length: 12, custom_emoji_required: true } });
+eq(eCon.minLength, 12, 'comment_constraint.min_length 优先');
+eq(eCon.needEmoji, true, 'comment_constraint.custom_emoji_required 生效');
+// 未生效 → 全部字段收起
+eq(T.pandoraEffect(box({ expire_at: '2026-11-01T00:00:00Z' }), NOW).active, false, '已过期事件不生效');
+eq(T.pandoraEffect(null, NOW).active, false, '无盒子不生效');
+
+// ---- barModel：潘多拉优先级高于徽章 ----
+const PE_DROP = fx();
+const mLock = T.barModel(50, PAIR, new Set([PERCENT.badge_id]), PE_DROP);
+eq(mLock.warn, true, '回归起点生效时告警');
+eq(mLock.target, null, '回归起点不给切换目标');
+eq(mLock.unequip, null, '回归起点不给摘下目标');
+eq(mLock.btn, '', '回归起点无动作按钮');
+eq(mLock.status.includes('回归起点'), true, '状态栏标注事件名');
+eq(mLock.status.includes('锁定'), true, '状态栏说明徽章已锁定');
+eq(mLock.status.includes('11-03 09:07'), true, '状态栏展示本地截止时间');
+
+const PE_FIXED = fx({ event_code: 'fixed_text_cost', event_name: '妙笔生花', event_title: '发帖和评论的金币费用固定为 6 金币。', rolled_value: 6 });
+const mFixed = T.barModel(5000, PAIR, new Set([FIXED.badge_id]), PE_FIXED);
+eq(mFixed.status, '潘多拉「妙笔生花」生效中 · 发评固定 6 金币', '妙笔生花固定费用文案');
+eq(mFixed.target, null, '妙笔生花生效时不切徽章');
+eq(mFixed.warn, false, '妙笔生花不告警');
+
+const PE_FREE = fx({ event_code: 'comment_min_length', event_name: '多说多写', event_title: '评论回复只能输入 10 个字以上。有失有得，生效期间，评论不扣除金币。', rolled_value: 10 });
+const mFree = T.barModel(50, PAIR, new Set([FIXED.badge_id]), PE_FREE);
+eq(mFree.status, '潘多拉「多说多写」生效中 · 发评 0 金币', 'gold 多说多写免费发评');
+eq(mFree.hint, '✓ 生效期间评论不扣金币（需 ≥10 字）', '免费发评同时提示字数约束');
+eq(mFree.target, null, '免费发评时不切徽章');
+
+// 金币升降机：徽章照常参与推荐，但展示金额乘算（乘法同缩放，谁更省的结论不变）
+const PE_MOD = fx({ event_code: 'coin_modifier_percent', event_name: '金币升降机', event_title: '大部分金币变动 -17%，收益少一点，花费也少一点。', rolled_value: -17 });
+const mMod0 = T.barModel(50, PAIR, new Set([FIXED.badge_id]), PE_MOD);
+eq(mMod0.status, '当前：前排打手 · 发评约 7 金币', '金币升降机 -17%：固定 8×0.83 = 6.64 → 7');
+eq(mMod0.btn, '切换「都听我说！」（6 金币）', '切换按钮金额按乘算展示：减免 7×0.83 = 5.81 → 6');
+eq(mMod0.hint, '可省 1 金币 · 潘多拉金币变动 -17% 已计入', '升降机提示拼接在徽章提示后');
+const mMod3 = T.barModel(120, PAIR, new Set([PERCENT.badge_id]), PE_MOD);
+eq(mMod3.status, '当前：都听我说！ · 发评约 17 金币', '减免 21×0.83 = 17.43 → 17');
+eq(mMod3.hint, '⚠️ 减免 30% 不如固定 7 金币 · 潘多拉金币变动 -17% 已计入', '告警文案金额同样乘算');
+// +40%：减免 30% 的 7 金币 → 10
+const PE_MOD_UP = fx({ event_code: 'coin_modifier_percent', event_name: '金币升降机', event_title: '大部分金币变动 +40%，收益多一点，花费也多一点。', rolled_value: 40 });
+const mModUp = T.barModel(80, PAIR, new Set([PERCENT.badge_id]), PE_MOD_UP);
+eq(mModUp.status, '当前：都听我说！ · 发评约 10 金币', '金币升降机 +40%：7×1.4 = 9.8 → 10');
+eq(mModUp.hint, '✓ 当前最省 · 潘多拉金币变动 +40% 已计入', '最优状态也标注升降机');
+
+// 字数/表情约束未满足 → 告警并提示（徽章逻辑照常）
+const PE_MIN = fx({ event_code: 'comment_min_length', event_name: '多说多写', event_title: '评论回复只能输入 10 个字以上。', rolled_value: 10 });
+const mMin = T.barModel(5, PAIR, new Set([PERCENT.badge_id]), PE_MIN);
+eq(mMin.warn, true, '字数不足潘多拉约束时告警');
+eq(mMin.hint, '✓ 当前最省 · 潘多拉要求 ≥10 字', '字数约束提示拼接在徽章提示后');
+const PE_EMOJI = fx({ event_code: 'comment_custom_emoji_required', event_name: '小表情', event_title: '评论需要包含至少一个自定义表情。', rolled_value: null });
+const mEmoji = T.barModel(50, PAIR, new Set([PERCENT.badge_id]), PE_EMOJI);
+eq(mEmoji.hint, '✓ 当前最省 · 潘多拉要求包含自定义表情', '自定义表情约束提示');
+
+// 与事件无关的头像/金币雨类事件：徽章逻辑原样，仅按需展示（无额外字段则无拼接）
+const PE_AVATAR = fx({ event_code: 'avatar_flip', event_name: '颠倒了！', event_title: '你的头像颠倒了 24 小时。', rolled_value: 1 });
+const mAvatar = T.barModel(85, PAIR, new Set([PERCENT.badge_id]), PE_AVATAR);
+eq(mAvatar.hint, '✓ 当前最省', '头像类事件不影响徽章提示');
+
+// 旧调用形态（不传 pandora）不受影响
+const mLegacy = T.barModel(85, PAIR, new Set([PERCENT.badge_id]));
+eq(mLegacy.hint, '✓ 当前最省', '不传潘多拉参数时行为与旧版一致');
+
+// ---- fmtTime ----
+eq(T.fmtTime('2026-11-03T01:07:17.249Z'), '11-03 09:07', '截止时间转本地（UTC+8）展示');
+eq(T.fmtTime('not-a-date'), '', '非法时间返回空串');
 
 console.log(`\n${passed} 通过, ${failed} 失败`);
 process.exit(failed ? 1 : 0);

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         2libra 评论金币徽章助手
 // @namespace    https://vhxubo.local/2libra-badge-switcher
-// @version      1.1.0
-// @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵或两枚同戴时改为摘下）；文案与告警阈值由徽章属性现算，不再写死 30%/100 字；切换通过 /api/badges/equip 完成，切换前自动检查是否收费。
+// @version      1.2.0
+// @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵或两枚同戴时改为摘下）；每日潘多拉事件优先于徽章逻辑：回归起点锁定徽章时不再给切换按钮、妙笔生花固定费用/多说多写免评论费时徽章退出计费、金币升降机按 ±% 乘算费用、多说多写/小表情给出约束提示；文案与告警阈值由徽章属性与事件文案现算；切换通过 /api/badges/equip 完成，切换前自动检查是否收费。
 // @author       vhxubo
 // @match        https://2libra.com/*
 // @run-at       document-idle
@@ -24,6 +24,7 @@
   let enabled = loadEnabled();
   let pair = { fixed: null, percent: null }; // 两类省金币徽章（来自 /api/badges/my）
   let equipped = new Set();                  // 当前已佩戴徽章 badge_id 集合
+  let pandoraBox = null;                     // 今日潘多拉盒子（来自 /api/pandora/today 的 d.box）
   let busy = false;                          // 切换请求进行中
   let menuIds = [];
 
@@ -103,6 +104,61 @@
     return pct >= 0 ? `减免 ${pct}%` : `增加 ${-pct}%`;
   }
 
+  // ---------- 潘多拉事件（纯函数，供测试） ----------
+  // 盒子是否处于「已生效且未到期」：apply_at 未到视为待生效，expire_at 已过视为结束
+  function pandoraActive(box, now = Date.now()) {
+    if (!box || !box.event_code) return false;
+    if (box.apply_at && new Date(box.apply_at).getTime() > now) return false;
+    if (box.expire_at && new Date(box.expire_at).getTime() <= now) return false;
+    return true;
+  }
+
+  // 从事件载荷取数值：优先服务端下发的 rolled_value，缺失时从 event_title 文案兜底解析
+  // （/api/pandora/today 的盒子字段未全量验证过，两条路径都保留）
+  function pandoraNum(pay, title, re) {
+    if (typeof pay.rolled_value === 'number') return pay.rolled_value;
+    const m = title.match(re);
+    return m ? Number(m[1]) : null;
+  }
+
+  // 解析生效中的潘多拉事件对「评论费用估算」的影响。
+  // 每个盒子只携带一个事件，因此各标志互斥；未生效返回 { active: false }
+  // - badge_drop_lock 回归起点：徽章全部掉落且锁定，无法佩戴 → 徽章逻辑完全让位
+  // - fixed_text_cost 妙笔生花：发评费用固定为 N 金币 → 徽章不参与计费
+  // - comment_min_length 多说多写：gold 档「评论不扣除金币」→ 免费发评；各档要求 ≥N 字
+  // - coin_modifier_percent 金币升降机：大部分金币变动 ±N%；
+  //   官方 COINS_MODIFIER_IMMUNE_REASONS 豁免清单不含发帖/评论扣费 → 费用估算需乘算
+  // - comment_custom_emoji_required 小表情：评论需包含自定义表情
+  function pandoraEffect(box, now = Date.now()) {
+    if (!pandoraActive(box, now)) return { active: false };
+    const pay = box.payload || box;
+    const title = String(pay.event_title || '');
+    const code = String(pay.event_code || '');
+    const constraint = box.comment_constraint || pay.comment_constraint || {};
+    return {
+      active: true,
+      code,
+      name: pay.event_name || code,
+      expireAt: box.expire_at || pay.expires_at || null,
+      lockBadge: code === 'badge_drop_lock',
+      fixedCost: code === 'fixed_text_cost' ? pandoraNum(pay, title, /固定为\s*(\d+)\s*金币/) : null,
+      freeComment: /不扣除?金币/.test(title),
+      modifierPct: code === 'coin_modifier_percent' ? pandoraNum(pay, title, /([+-]?\d+)\s*%/) : null,
+      minLength: typeof constraint.min_length === 'number'
+        ? constraint.min_length
+        : (code === 'comment_min_length' ? pandoraNum(pay, title, /(\d+)\s*个字/) : null),
+      needEmoji: code === 'comment_custom_emoji_required' || constraint.custom_emoji_required === true,
+    };
+  }
+
+  // 本地时间 MM-DD HH:mm（潘多拉截止时间展示）
+  function fmtTime(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const p = (n) => String(n).padStart(2, '0');
+    return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
   // 当前佩戴的费用徽章（可能 0 / 1 / 2 枚；两枚同戴时费用存在叠加歧义）
   function wornCostBadges(p, eq) {
     return [p.fixed, p.percent].filter((b) => b && eq.has(b.badge_id));
@@ -122,25 +178,54 @@
   }
 
   // 状态栏展示模型（纯函数）
-  // - warn：需要红色提醒（当前佩戴已不划算 / 两枚同戴）
+  // - warn：需要红色提醒（当前佩戴已不划算 / 两枚同戴 / 潘多拉约束未满足）
   // - target：建议切换到的徽章；unequip：建议摘下的徽章（二者互斥）
-  function barModel(len, p, eq) {
+  // - pand：可选的 pandoraEffect(box) 结果；潘多拉事件优先于徽章逻辑
+  function barModel(len, p, eq, pand) {
     const base = baseCost(len);
-    const worn = wornCostBadges(p, eq);
-    const cur = worn[0] || null;
-    const curCost = badgeCost(len, cur);
+    const pe = pand && pand.active ? pand : null;
     const m = {
       count: `${len} 字`,
-      status: worn.length > 1
-        // 站点如何处理两枚费用徽章未知，明确提示估算可能不准
-        ? `当前：${worn.map((b) => b.badge.name).join(' + ')} · 发评约 ${curCost} 金币（同戴，估算可能不准）`
-        : `当前：${cur ? cur.badge.name : '未佩戴费用徽章'} · 发评约 ${curCost} 金币`,
+      status: '',
       hint: '',
       warn: false,
       target: null,
       unequip: null,
       btn: '',
     };
+
+    // 0) 潘多拉事件接管：徽章无法佩戴 / 费用被固定或免除时，不再给任何徽章动作
+    if (pe) {
+      const until = pe.expireAt ? ` · ${fmtTime(pe.expireAt)} 截止` : '';
+      if (pe.lockBadge) {
+        m.status = `潘多拉「${pe.name}」生效中${until} · 徽章已掉落锁定`;
+        m.hint = '⚠️ 下次开盒前无法佩戴徽章，按无徽章计费';
+        m.warn = true;
+        return m;
+      }
+      if (pe.freeComment) {
+        m.status = `潘多拉「${pe.name}」生效中 · 发评 0 金币`;
+        m.hint = pe.minLength ? `✓ 生效期间评论不扣金币（需 ≥${pe.minLength} 字）` : '✓ 生效期间评论不扣金币';
+        return m;
+      }
+      if (typeof pe.fixedCost === 'number') {
+        m.status = `潘多拉「${pe.name}」生效中 · 发评固定 ${pe.fixedCost} 金币`;
+        m.hint = '潘多拉已固定费用，徽章不参与计算';
+        return m;
+      }
+    }
+
+    // 金币升降机：对发评扣费按 ±% 乘算（乘法同缩放不改变「哪枚更省」的判断，只影响展示数值）
+    const k = pe && typeof pe.modifierPct === 'number' ? 1 + pe.modifierPct / 100 : 1;
+    const scale = (n) => Math.round(n * k);
+
+    const worn = wornCostBadges(p, eq);
+    const cur = worn[0] || null;
+    const curCost = badgeCost(len, cur);
+    m.status = worn.length > 1
+      // 站点如何处理两枚费用徽章未知，明确提示估算可能不准
+      ? `当前：${worn.map((b) => b.badge.name).join(' + ')} · 发评约 ${scale(curCost)} 金币（同戴，估算可能不准）`
+      : `当前：${cur ? cur.badge.name : '未佩戴费用徽章'} · 发评约 ${scale(curCost)} 金币`;
 
     const best = recommend(len, p);
 
@@ -152,34 +237,48 @@
       m.btn = `摘下「${drop.badge.name}」（两枚同戴费用存疑）`;
       m.hint = '⚠️ 两枚费用徽章同时佩戴，估算可能不准';
       m.warn = true;
-      return m;
+      return finishPandora(m, len, pe, k);
     }
 
     // 2) 戴着的徽章比不戴还贵：建议摘下（站点存在恒定 10 金币的固定徽章，同价则不算贵）
     if (cur && curCost > base) {
       m.unequip = cur;
-      m.btn = `摘下「${cur.badge.name}」（省 ${curCost - base} 金币）`;
-      m.hint = `⚠️ 当前徽章比不戴贵 ${curCost - base} 金币`;
+      m.btn = `摘下「${cur.badge.name}」（省 ${scale(curCost - base)} 金币）`;
+      m.hint = `⚠️ 当前徽章比不戴贵 ${scale(curCost - base)} 金币`;
       m.warn = true;
-      return m;
+      return finishPandora(m, len, pe, k);
     }
 
     const bestCost = best ? badgeCost(len, best) : base;
     // 3) 没有更省的候选、已是最省、或同价（省 0 金币）：不给无意义的切换按钮
     if (!best || (cur && (best === cur || bestCost >= curCost))) {
       m.hint = cur ? '✓ 当前最省' : '';
-      return m;
+      return finishPandora(m, len, pe, k);
     }
 
     // 4) 有更省的一枚
     m.target = best;
-    m.btn = `切换「${best.badge.name}」（${bestCost} 金币）`;
+    m.btn = `切换「${best.badge.name}」（${scale(bestCost)} 金币）`;
     if (cur === p.percent) {
       m.warn = true;
-      m.hint = `⚠️ ${pctText(p.percent.badge.attributes.comment_cost_percent)} 不如固定 ${bestCost} 金币`;
+      m.hint = `⚠️ ${pctText(p.percent.badge.attributes.comment_cost_percent)} 不如固定 ${scale(bestCost)} 金币`;
     } else {
-      m.hint = `可省 ${curCost - bestCost} 金币`;
+      m.hint = `可省 ${scale(curCost - bestCost)} 金币`;
     }
+    return finishPandora(m, len, pe, k);
+  }
+
+  // 徽章分支收尾：叠加潘多拉的费用乘算说明与评论约束提示
+  function finishPandora(m, len, pe, k) {
+    if (!pe) return m;
+    const tags = [];
+    if (k !== 1) tags.push(`潘多拉金币变动 ${pe.modifierPct > 0 ? '+' : ''}${pe.modifierPct}% 已计入`);
+    if (pe.minLength && len < pe.minLength) {
+      tags.push(`潘多拉要求 ≥${pe.minLength} 字`);
+      m.warn = true;
+    }
+    if (pe.needEmoji) tags.push('潘多拉要求包含自定义表情');
+    if (tags.length) m.hint = [m.hint, tags.join(' · ')].filter(Boolean).join(' · ');
     return m;
   }
 
@@ -261,6 +360,22 @@
       pair = { fixed: null, percent: null };
     }
     await refreshEquipped();
+    refreshPandora(); // 不阻塞首屏徽章数据
+  }
+
+  // 拉取今日潘多拉盒子（事件优先级高于徽章）；失败按无事件处理，不影响徽章功能。
+  // /api/pandora/today 返回 { box, can_open, has_box, active_extended }，事件在 box 上；
+  // 兼容直接返回盒子对象或包一层 payload 的形态
+  async function refreshPandora() {
+    const token = readCookie('access_token');
+    if (!token) return;
+    try {
+      const d = await apiJson('/api/pandora/today');
+      pandoraBox = d && d.box ? d.box : d && d.event_code ? d : null;
+    } catch (e) {
+      pandoraBox = null;
+    }
+    requestRender();
   }
 
   async function refreshEquipped() {
@@ -279,6 +394,12 @@
   // 切换徽章：先确认是否收费，再佩戴目标并尝试摘下另一枚（站点允许并存，避免叠加歧义）
   async function switchTo(target) {
     if (busy || !target) return;
+    // 防御：回归起点生效期间佩戴请求必然失败，直接拦截（状态栏正常时不会走到这里）
+    const pe = pandoraEffect(pandoraBox);
+    if (pe.active && pe.lockBadge) {
+      toast(`潘多拉「${pe.name}」生效中：下次开盒前无法佩戴徽章`, true);
+      return;
+    }
     busy = true;
     requestRender();
     try {
@@ -409,7 +530,7 @@
   // 只在文案/显隐真正变化时写 DOM，避免状态栏自身改动触发观察器循环
   function updateBar(editor, bar) {
     if (!bar) return;
-    const model = barModel(editorText(editor).length, pair, equipped);
+    const model = barModel(editorText(editor).length, pair, equipped, pandoraEffect(pandoraBox));
     const [countEl, statusEl, hintEl, btnEl] = bar.children;
     setText(countEl, model.count);
     countEl.style.color = model.warn ? '#dc2626' : '';
@@ -472,11 +593,21 @@
   // ---------- 快捷键 ----------
   // Alt+B：切到当前字数下更省的那一枚；已是最省则不动；
   // 戴着的徽章已经不比不戴便宜时改为摘下；两枚同戴时先摘掉多余的那枚。
+  // 潘多拉事件接管时（徽章锁定 / 费用被固定或免除）不再切徽章。
   function onHotkey(e) {
     if (!enabled) return;
     if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (e.key !== 'b' && e.key !== 'B') return;
     e.preventDefault();
+    const pe = pandoraEffect(pandoraBox);
+    if (pe.active && pe.lockBadge) {
+      toast(`潘多拉「${pe.name}」生效中：下次开盒前无法佩戴徽章`, true);
+      return;
+    }
+    if (pe.active && (pe.freeComment || typeof pe.fixedCost === 'number')) {
+      toast('潘多拉已固定/免除评论费用，切换徽章不影响发评扣费');
+      return;
+    }
     const len = activeLength();
     const worn = wornCostBadges(pair, equipped);
     const best = recommend(len, pair);
@@ -561,9 +692,9 @@
         requestRender();
       }
     ));
-    menuIds.push(GM_registerMenuCommand('重新拉取徽章数据', () => {
+    menuIds.push(GM_registerMenuCommand('重新拉取徽章与潘多拉数据', () => {
       initData();
-      toast('已刷新徽章数据');
+      toast('已刷新徽章与潘多拉数据');
     }));
   }
 
@@ -581,8 +712,11 @@
     subtree: true,
   });
 
-  // 其他标签页/个人页里换徽章后，回到本页时同步佩戴状态
+  // 其他标签页/个人页里换徽章、开潘多拉盒子后，回到本页时同步佩戴状态与当前事件
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) refreshEquipped();
+    if (!document.hidden) {
+      refreshEquipped();
+      refreshPandora();
+    }
   });
 })();

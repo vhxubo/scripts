@@ -1,6 +1,6 @@
 # 2libra 评论金币徽章助手（2libra Badge Switcher）
 
-A Tampermonkey userscript for [2libra.com](https://2libra.com/): a live helper bar above every comment editor on post pages that shows the character count and the **estimated coin cost** of your next comment, then picks the cheaper of your two cost-modifying badges — switching them via the site's own `/api/badges/equip` endpoint.
+A Tampermonkey userscript for [2libra.com](https://2libra.com/): a live helper bar above every comment editor on post pages that shows the character count and the **estimated coin cost** of your next comment, then picks the cheaper of your two cost-modifying badges — switching them via the site's own `/api/badges/equip` endpoint. The **daily Pandora event takes priority over badge logic**: when 「回归起点」 locks all badges the bar stops offering switches, when 「妙笔生花」 fixes the comment cost or 「多说多写」(gold) makes comments free the badges drop out of the calculation, and 「金币升降机」 scales every displayed cost by its ±%.
 
 ## 💡 Background
 
@@ -26,6 +26,13 @@ So for this pair the break-even is 100 characters: below it the percent badge wi
 ## ✨ Features
 
 - **Live char count** — the bar re-renders on every keystroke in any comment editor on the page (bottom composer, reply boxes), powered by a capture-phase `input` listener + one rAF-debounced `MutationObserver`
+- **Pandora first** — the active daily event (fetched from `/api/pandora/today`, refreshed on tab focus) outranks badge logic:
+  - 「回归起点」`badge_drop_lock` — badges are dropped & locked until the next box: red bar with the event name and local-time deadline, no switch/unequip buttons, Alt+B explains instead of switching, and a stale switch request is intercepted
+  - 「妙笔生花」`fixed_text_cost` — the comment cost is fixed at N coins (from `rolled_value`, falling back to parsing 「固定为 N 金币」 from the event text): the bar shows the flat cost and badges step aside
+  - 「多说多写」`comment_min_length` — the gold variant makes comments free (「不扣除金币」 detected from the event text); every variant shows a `≥N 字` warning while your draft is too short
+  - 「金币升降机」`coin_modifier_percent` — the site's `COINS_MODIFIER_IMMUNE_REASONS` exemption list does **not** cover comment/post costs, so every displayed cost (and every saving amount) is scaled by `1 ± N%`; since the scaling is uniform it never changes *which* badge is cheaper
+  - 「小表情」`comment_custom_emoji_required` — the bar reminds you a custom emoji is required
+  - Avatar/task/coin-rain events don't affect comment costs — badge logic runs untouched
 - **Cost estimate** — shows your current badge and the coins the comment would cost, computed from the same tier table the site's frontend uses
 - **Smart recommendation** — whichever of your two cost badges is cheaper for the current length; when you already wear it you get a green「✓ 当前最省」, and equal-cost pairs no longer produce a pointless「可省 0 金币」switch button
 - **Dynamic warning + quick action** — the red warning is generated from the badge's actual attribute (e.g.「⚠️ 减免 10% 不如固定 8 金币」) and fires whenever the percent badge stops being the cheaper choice, not at a hardcoded 100-char threshold; the button switches to the cheaper badge, or offers「摘下」when your worn badge costs more than wearing nothing
@@ -56,7 +63,7 @@ So for this pair the break-even is 100 characters: below it the percent badge wi
 
 ## 🧪 Testing
 
-Pure-logic tests (cost tiers, badge classification incl. `badge.id` normalization, recommendation break-even, dynamic percent copy, equal-cost pairs, dual-equip and「摘下」decisions, bar copy for every scenario, JWT decode incl. UTF-8 usernames, equipped-list normalization, route matching, cookie reading incl. malformed encoding) run in Node against the real script source:
+Pure-logic tests (cost tiers, badge classification incl. `badge.id` normalization, recommendation break-even, dynamic percent copy, equal-cost pairs, dual-equip and「摘下」decisions, bar copy for every scenario, JWT decode incl. UTF-8 usernames, equipped-list normalization, route matching, cookie reading incl. malformed encoding, plus the full Pandora suite — activity window, per-event parsing incl. `rolled_value`/text fallback/constraint overrides, every bar scenario and ±% rounding) run in Node against the real script source:
 
 ```bash
 node 2libra-badge-switcher.test.js
@@ -65,6 +72,8 @@ node 2libra-badge-switcher.test.js
 ## ⚠️ Limitations
 
 - The estimate covers **posting** comments; editing a comment has a different (slightly cheaper) tier and is not modeled
+- Pandora effect parsing mirrors the payloads observed in the wild (`event_code` / `event_title` / `rolled_value` / `comment_constraint`); if the site ships new event codes or renames the wording, the bar falls back to plain badge logic instead of guessing
+- The site enforces a badge-switch cooldown (`BADGE_CHANGE_COOLDOWN_MINUTES = 10` in its frontend constants); a cooldown rejection surfaces as a red toast from the site's error message
 - The editor is detected via the site's `w-md-editor` markdown editor; if the site swaps editor libraries the selectors need updating
 - Flat + percent badges are assumed not to stack — switching equips the target and unequips the other one; if the unequip call fails the bar surfaces it and offers a manual「摘下」rather than silently pretending the state changed
 - If the site starts charging for badge switches, you'll see a confirm dialog (via `check-cost`); the script never spends coins silently
