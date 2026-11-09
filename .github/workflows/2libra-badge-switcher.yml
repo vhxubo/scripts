@@ -1,0 +1,114 @@
+name: 2libra badge switcher
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '2libra-badge-switcher/2libra-badge-switcher.user.js'
+      - '2libra-badge-switcher/2libra-badge-switcher.test.js'
+      - '.github/workflows/2libra-badge-switcher.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Syntax check
+        run: node --check 2libra-badge-switcher/2libra-badge-switcher.user.js
+
+      - name: Run logic tests
+        run: node 2libra-badge-switcher/2libra-badge-switcher.test.js
+
+      - name: Detect whether the userscript changed
+        id: changed
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          BEFORE="${BEFORE_SHA:-}"
+          if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            BEFORE="$(git rev-parse HEAD^ 2>/dev/null || true)"
+          fi
+          echo "before=$BEFORE" >> "$GITHUB_OUTPUT"
+          if [ -z "$BEFORE" ]; then
+            # 手动触发或没有父提交：按“脚本有改动”处理，方便手动 purge
+            echo "script=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          FILES="$(git diff --name-only "$BEFORE" HEAD)"
+          echo "$FILES"
+          if printf '%s\n' "$FILES" | grep -qx '2libra-badge-switcher/2libra-badge-switcher.user.js'; then
+            echo "script=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "script=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ensure @version was bumped
+        if: steps.changed.outputs.script == 'true'
+        env:
+          BEFORE: ${{ steps.changed.outputs.before }}
+        run: |
+          node - <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const fs = require('node:fs');
+
+          const file = '2libra-badge-switcher/2libra-badge-switcher.user.js';
+          const re = /^\/\/[ \t]*@version[ \t]+(\S+)/m;
+          const versionOf = (source) => {
+            const match = String(source || '').match(re);
+            return match ? match[1] : '';
+          };
+
+          const local = versionOf(fs.readFileSync(file, 'utf8'));
+          let previous = '';
+          if (process.env.BEFORE) {
+            try {
+              previous = versionOf(execFileSync('git', ['show', `${process.env.BEFORE}:${file}`], { encoding: 'utf8' }));
+            } catch (e) {
+              console.log('无法读取旧版本，按首次发布处理');
+            }
+          }
+
+          // 与脚本内的版本比较保持一致：按段数值比较，忽略 v 前缀
+          const parts = (v) => String(v).replace(/^v/i, '').split(/[.+-]/).map((s) => parseInt(s, 10) || 0);
+          const compare = (a, b) => {
+            const pa = parts(a);
+            const pb = parts(b);
+            for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+              const diff = (pa[i] || 0) - (pb[i] || 0);
+              if (diff) return diff > 0 ? 1 : -1;
+            }
+            return 0;
+          };
+
+          if (!local) throw new Error('没有解析到 @version');
+          if (previous && compare(local, previous) <= 0) {
+            console.error(`@version 未递增：${previous} -> ${local}，用户不会收到更新`);
+            process.exit(1);
+          }
+          console.log(`@version ${previous || '(首次)'} -> ${local}`);
+          NODE
+
+      - name: Purge jsDelivr cache
+        if: steps.changed.outputs.script == 'true'
+        run: |
+          set -euo pipefail
+          URL='https://purge.jsdelivr.net/gh/vhxubo/scripts@main/2libra-badge-switcher/2libra-badge-switcher.user.js'
+          for attempt in 1 2 3; do
+            if curl -fsS --max-time 30 "$URL" -o purge.json; then break; fi
+            echo "purge 第 ${attempt} 次失败，重试…"
+            sleep 3
+          done
+          cat purge.json
+          node -e "const r = require('./purge.json'); if (r.status !== 'finished' && r.status !== 'pending') { console.error('purge 未成功:', JSON.stringify(r)); process.exit(1); } console.log('jsDelivr purge:', r.status);"
