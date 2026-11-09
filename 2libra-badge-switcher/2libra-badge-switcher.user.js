@@ -460,15 +460,7 @@
     }
     await refreshEquipped(true);
     if (equipped.size === 1 && equipped.has(target.badge_id)) return true;
-    // 先摘后戴；摘下失败就停止，避免尝试同时佩戴。
-    for (const id of equipped) {
-      if (id === target.badge_id) continue;
-      await apiJson('/api/badges/equip', {
-        method: 'POST',
-        body: JSON.stringify({ badge_id: id, equip: false }),
-      });
-      equipped.delete(id);
-    }
+    // 佩戴接口会直接替换当前徽章，无需先摘下。
     await apiJson('/api/badges/equip', {
       method: 'POST',
       body: JSON.stringify({ badge_id: target.badge_id, equip: true }),

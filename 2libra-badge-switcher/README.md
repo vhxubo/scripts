@@ -86,7 +86,7 @@ node 2libra-badge-switcher.test.js
 - The 「走个面」 toggle replaces the current badge when equipping and displays the configured +20%; it does not verify the site's activity calculation. Detection uses the badge id/name first and `daily_active_gain_percent` as a fallback, so if the site ships another badge with the same attribute the first match owns the button
 - The editor is detected via the site's `w-md-editor` markdown editor; if the site swaps editor libraries the selectors need updating (this also applies inside the post dialog)
 - The post dialog itself is recognised by “an editor inside a `<dialog>`/`.modal`/`[role="dialog"]` that isn't a known non-comment modal” (open or closed). If the site gives the post dialog an id/class that collides with the exclusion list, or renders its comment box outside the dialog, the selector logic needs a tweak
-- Only one badge can be equipped at a time, including the activity badge. Switching removes the current badge before equipping the target; Pandora badge lock disables equipping.
+- Only one badge can be equipped at a time, including the activity badge. The equip endpoint directly replaces the current badge; Pandora badge lock disables equipping.
 - If the site starts charging for badge switches, you'll see a confirm dialog (via `check-cost`); the script never spends coins silently
 - The `access_token` must be a JS-readable cookie for the badge features to work; if the site makes it HttpOnly, the bar degrades to char count + base-tier cost
 - Updates are performed by the userscript manager. The script only declares `@updateURL`/`@downloadURL`; whether/when a manager checks for updates (and whether auto-update is enabled at all) is user/manager policy
