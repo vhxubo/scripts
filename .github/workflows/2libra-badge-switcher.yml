@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  verify-and-publish:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +42,7 @@ jobs:
           fi
           echo "before=$BEFORE" >> "$GITHUB_OUTPUT"
           if [ -z "$BEFORE" ]; then
-            # 手动触发或没有父提交：按“脚本有改动”处理，方便手动 purge
+            # 手动触发或没有父提交：按“脚本有改动”处理，仍执行版本检查
             echo "script=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -99,16 +99,3 @@ jobs:
           }
           console.log(`@version ${previous || '(首次)'} -> ${local}`);
           NODE
-
-      - name: Purge jsDelivr cache
-        if: steps.changed.outputs.script == 'true'
-        run: |
-          set -euo pipefail
-          URL='https://purge.jsdelivr.net/gh/vhxubo/scripts@main/2libra-badge-switcher/2libra-badge-switcher.user.js'
-          for attempt in 1 2 3; do
-            if curl -fsS --max-time 30 "$URL" -o purge.json; then break; fi
-            echo "purge 第 ${attempt} 次失败，重试…"
-            sleep 3
-          done
-          cat purge.json
-          node -e "const r = require('./purge.json'); if (r.status !== 'finished' && r.status !== 'pending') { console.error('purge 未成功:', JSON.stringify(r)); process.exit(1); } console.log('jsDelivr purge:', r.status);"

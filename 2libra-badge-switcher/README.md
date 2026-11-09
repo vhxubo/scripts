@@ -44,12 +44,12 @@ So for this pair the break-even is 100 characters: below it the percent badge wi
 - **Cross-tab aware** — re-syncs equipped state on tab focus, after every switch, and via the Tampermonkey menu (concurrent refreshes share one request)
 - **Degraded mode** — not logged in, API errors, or an undecodable `access_token` cookie? The bar still shows the char count and base-tier cost, and a malformed cookie can no longer break initialization
 - **Menu toggle** — Tampermonkey menu turns the helper on/off, persisted in GM storage
-- **Auto-updates** — the header declares `@updateURL`/`@downloadURL` on the jsDelivr GitHub mirror, so Tampermonkey/Violentmonkey compares `@version` and installs new releases by itself. There is deliberately **no in-script updater**: it could only notify, never install, and would add `GM_xmlhttpRequest`/`@connect` permission prompts. A GitHub Actions workflow validates each release (syntax, tests, `@version` must increase) and purges the jsDelivr cache
+- **Auto-updates** — the header declares `@updateURL`/`@downloadURL` on the GitHub raw file, so Tampermonkey/Violentmonkey compares `@version` and installs new releases by itself. There is deliberately **no in-script updater**: it could only notify, never install, and would add `GM_xmlhttpRequest`/`@connect` permission prompts. Raw caches for only ~5 minutes, and a GitHub Actions workflow validates each release (syntax, tests, `@version` must increase). A jsDelivr branch mirror was tried but its branch cache/purge proved unreliable, so it is not used
 
 ## 🚀 Getting Started
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/)
-2. Install from `https://cdn.jsdelivr.net/gh/vhxubo/scripts@main/2libra-badge-switcher/2libra-badge-switcher.user.js` (fallback: the [raw GitHub URL](https://raw.githubusercontent.com/vhxubo/scripts/main/2libra-badge-switcher/2libra-badge-switcher.user.js)), or create a new userscript and paste in `2libra-badge-switcher.user.js`, then save
+2. Install from `https://raw.githubusercontent.com/vhxubo/scripts/main/2libra-badge-switcher/2libra-badge-switcher.user.js` (the same URL is used for updates), or create a new userscript and paste in `2libra-badge-switcher.user.js`, then save
 3. Open any post on https://2libra.com/ and scroll to the comment editor — the helper bar sits right above it
 
 ## 📖 Usage
@@ -65,11 +65,11 @@ So for this pair the break-even is 100 characters: below it the percent badge wi
 
 ## 🔄 Update pipeline
 
-On every push to `main` that touches the userscript, [`.github/workflows/2libra-badge-switcher.yml`](../.github/workflows/2libra-badge-switcher.yml) runs the syntax check and the test suite, fails if `@version` was not increased, and purges the jsDelivr cache for the file. Installed copies then pick the release up on the manager's next update check — the script itself intentionally does no update polling.
+On every push to `main` that touches the userscript, [`.github/workflows/2libra-badge-switcher.yml`](../.github/workflows/2libra-badge-switcher.yml) runs the syntax check and the test suite, and fails if `@version` was not increased. Raw then serves the release within its ~5-minute cache, and installed copies pick it up on the manager's next update check — no purge step is needed, and the script itself intentionally does no update polling.
 
 ## 🧪 Testing
 
-Pure-logic tests (cost tiers, badge classification incl. `badge.id` normalization, recommendation break-even, dynamic percent copy, equal-cost pairs, dual-equip and「摘下」decisions, bar copy for every scenario, JWT decode incl. UTF-8 usernames, equipped-list normalization, route matching, cookie reading incl. malformed encoding, plus the full Pandora suite — activity window, per-event parsing incl. `rolled_value`/text fallback/constraint overrides, every bar scenario and ±% rounding, and the update-metadata assertions — jsDelivr URL pair and no cross-origin grants) run in Node against the real script source:
+Pure-logic tests (cost tiers, badge classification incl. `badge.id` normalization, recommendation break-even, dynamic percent copy, equal-cost pairs, dual-equip and「摘下」decisions, bar copy for every scenario, JWT decode incl. UTF-8 usernames, equipped-list normalization, route matching, cookie reading incl. malformed encoding, plus the full Pandora suite — activity window, per-event parsing incl. `rolled_value`/text fallback/constraint overrides, every bar scenario and ±% rounding, and the update-metadata assertions — raw URL pair and no cross-origin grants) run in Node against the real script source:
 
 ```bash
 node 2libra-badge-switcher.test.js
@@ -85,5 +85,5 @@ node 2libra-badge-switcher.test.js
 - If the site starts charging for badge switches, you'll see a confirm dialog (via `check-cost`); the script never spends coins silently
 - The `access_token` must be a JS-readable cookie for the badge features to work; if the site makes it HttpOnly, the bar degrades to char count + base-tier cost
 - Updates are performed by the userscript manager. The script only declares `@updateURL`/`@downloadURL`; whether/when a manager checks for updates (and whether auto-update is enabled at all) is user/manager policy
-- `@updateURL` has no mirror fallback: it points at jsDelivr. If jsDelivr is unreachable, manager auto-update pauses until it recovers; installing the raw GitHub file manually is the fallback
+- `@updateURL` has no mirror fallback: it points at GitHub raw. On networks where `raw.githubusercontent.com` is blocked, manager auto-update fails. A jsDelivr branch mirror was evaluated and rejected because its branch cache/purge is unreliable (a known upstream issue), not because of the CDN itself
 - v1.2.0 shipped without any update metadata, so existing installs need **one manual reinstall** from the URLs above; from v1.4.0 on, the manager takes over. A release is only seen after it is pushed to the branch used by `@updateURL` and `@version` is increased — CI fails the build when the bump is missing

@@ -401,13 +401,14 @@ eq(T.fmtTime('2026-11-03T01:07:17.249Z'), '11-03 09:07', '截止时间转本地�
 eq(T.fmtTime('not-a-date'), '', '非法时间返回空串');
 
 // ---- 自动更新元数据：交给油猴管理器，脚本内不再自检 ----
-// 管理器靠 @updateURL + @downloadURL 检查并安装新版本；jsDelivr 由 CI 在 push 后 purge
+// 管理器靠 @updateURL + @downloadURL 检查并安装新版本；raw 缓存约 5 分钟，无需 purge
 const metaTag = (name) => (src.match(new RegExp('^//[ \\t]*@' + name + '[ \\t]+(\\S+)', 'm')) || [])[1];
 const headerVersion = metaTag('version');
 eq(/^\d+\.\d+\.\d+$/.test(headerVersion), true, '@version 为三段式版本号');
 eq(metaTag('updateURL'), metaTag('downloadURL'), 'updateURL 与 downloadURL 指向同一文件');
-eq(metaTag('updateURL').startsWith('https://cdn.jsdelivr.net/gh/vhxubo/scripts@main/'), true, '更新地址使用 jsDelivr GitHub 镜像');
+eq(metaTag('updateURL').startsWith('https://raw.githubusercontent.com/vhxubo/scripts/main/'), true, '更新地址使用 GitHub raw');
 eq(metaTag('updateURL').endsWith('/2libra-badge-switcher/2libra-badge-switcher.user.js'), true, '更新地址指向本脚本');
+eq(metaTag('updateURL').includes('cdn.jsdelivr.net'), false, '不使用 jsDelivr 分支缓存（purge 不可靠）');
 eq(/^\/\/[ \t]*@grant[ \t]+GM_xmlhttpRequest$/m.test(src), false, '不自检更新，不申请 GM_xmlhttpRequest');
 eq(/^\/\/[ \t]*@connect[ \t]+/m.test(src), false, '不自检更新，不声明 @connect');
 
