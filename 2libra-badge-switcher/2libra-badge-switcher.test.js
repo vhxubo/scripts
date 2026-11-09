@@ -37,7 +37,11 @@ globalThis.document = {
   addEventListener(type, callback) { listeners['doc:' + type] = callback; },
 };
 globalThis.documentElement = globalThis.document.documentElement = {};
-globalThis.MutationObserver = class { observe() {} };
+let mutationCallback;
+globalThis.MutationObserver = class {
+  constructor(callback) { mutationCallback = callback; }
+  observe() {}
+};
 globalThis.requestAnimationFrame = () => {};
 
 // ---- 把内部函数导出注入 IIFE 末尾 ----
@@ -487,6 +491,36 @@ eq(metaTag('updateURL').endsWith('/2libra-badge-switcher/2libra-badge-switcher.u
 eq(metaTag('updateURL').includes('cdn.jsdelivr.net'), false, '不使用 jsDelivr 分支缓存（purge 不可靠）');
 eq(/^\/\/[ \t]*@grant[ \t]+GM_xmlhttpRequest$/m.test(src), false, '不自检更新，不申请 GM_xmlhttpRequest');
 eq(/^\/\/[ \t]*@connect[ \t]+/m.test(src), false, '不自检更新，不声明 @connect');
+
+// ---- 性能回归：无关 DOM 不排帧、输入仅更新所属编辑器 ----
+const frames = [];
+globalThis.requestAnimationFrame = (callback) => { frames.push(callback); };
+const irrelevantNode = { nodeType: 1, matches: () => false, querySelector: () => null };
+const record = (target, addedNodes = [], removedNodes = []) => ({ target, addedNodes, removedNodes });
+mutationCallback([record({}, [irrelevantNode])]);
+eq(frames.length, 0, '无关页面更新不触发渲染');
+mutationCallback([record({ closest: () => ({}) }, [irrelevantNode])]);
+eq(frames.length, 0, '助手内部文字更新不触发渲染');
+listeners['doc:input']({ target: { closest: () => null } });
+eq(frames.length, 0, '搜索框等无关输入不触发渲染');
+const detachedEditor = { closest: () => null, isConnected: false };
+listeners['doc:input']({ target: { closest: () => detachedEditor } });
+listeners['doc:input']({ target: { closest: () => detachedEditor } });
+eq(frames.length, 1, '同一帧多次输入合并更新');
+const originalQuery = document.querySelectorAll;
+let scans = 0;
+document.querySelectorAll = () => { scans++; return []; };
+frames.shift()();
+eq(scans, 0, '输入更新不扫描全页，已卸载编辑器安全跳过');
+const editorNode = { nodeType: 1, matches: () => true };
+mutationCallback([record({}, [editorNode])]);
+eq(frames.length, 1, '新增编辑器触发发现流程');
+frames.shift()();
+eq(scans > 0, true, '结构变化仍执行全页发现');
+mutationCallback([record({}, [], [editorNode])]);
+eq(frames.length, 1, '移除编辑器触发清理流程');
+frames.shift()();
+document.querySelectorAll = originalQuery;
 
 console.log(`\n${passed} 通过, ${failed} 失败`);
 process.exit(failed ? 1 : 0);

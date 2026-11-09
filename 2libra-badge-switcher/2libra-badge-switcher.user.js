@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         2libra 评论金币徽章助手
 // @namespace    https://vhxubo.local/2libra-badge-switcher
-// @version      1.5.2
+// @version      1.5.3
 // @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵或两枚同戴时改为摘下）；持有「走个面」徽章时在状态栏最左侧提供活跃度 +20% 的一键佩戴/摘下入口（与评论字数、金币费用无关，不参与费用推荐）；每日潘多拉事件优先于徽章逻辑：回归起点锁定徽章时不再给切换按钮、妙笔生花固定费用/多说多写免评论费时徽章退出计费、金币升降机按 ±% 乘算费用、多说多写/小表情给出约束提示；文案与告警阈值由徽章属性与事件文案现算；帖子弹窗（列表页点击帖子时用原生 dialog 渲染）里的评论框同样注入，且状态栏固定 20px 单行高度、文案变长只省略不换行，弹窗动画与打字都不会把正文顶得上下跳动；切换通过 /api/badges/equip 完成，切换前自动检查是否收费；内置自动更新：@updateURL/@downloadURL 指向 GitHub raw，由油猴管理器自动检查并升级（raw 仅缓存约 5 分钟，GitHub Actions 校验版本号递增）。
 // @author       vhxubo
 // @match        https://2libra.com/*
@@ -813,13 +813,53 @@
   }
 
   let renderQueued = false;
-  function requestRender() {
+  let fullRenderNeeded = false;
+  const dirtyEditors = new Set();
+  function requestRender(editor) {
+    if (editor) dirtyEditors.add(editor);
+    else fullRenderNeeded = true;
     if (renderQueued) return;
     renderQueued = true;
     requestAnimationFrame(() => {
       renderQueued = false;
-      render();
+      const full = fullRenderNeeded;
+      fullRenderNeeded = false;
+      const editors = Array.from(dirtyEditors);
+      dirtyEditors.clear();
+      if (full) render();
+      else if (enabled) {
+        for (const editor of editors) {
+          if (editor.isConnected && inCommentContext(editor)) updateBar(editor, barFor(editor));
+        }
+      }
     });
+  }
+
+  function onInput(e) {
+    if (!enabled) return;
+    const editor = e.target && typeof e.target.closest === 'function'
+      ? e.target.closest(EDITOR_SELECTOR) : null;
+    if (editor && inCommentContext(editor)) requestRender(editor);
+  }
+
+  let observedPath = window.location.pathname;
+  function onMutations(records) {
+    const pathChanged = observedPath !== window.location.pathname;
+    observedPath = window.location.pathname;
+    if (!enabled) return;
+    if (pathChanged) { requestRender(); return; }
+    const selector = `${EDITOR_SELECTOR}, [${BAR_FLAG}], ${DIALOG_ANY_SELECTOR}`;
+    const relevant = (node) => node.nodeType === 1
+      && (node.matches(selector) || node.querySelector(selector));
+    for (const record of records) {
+      // textContent 更新会产生 childList 记录，忽略助手自己的内部改动。
+      if (record.target.closest && record.target.closest(`[${BAR_FLAG}]`)) continue;
+      if (Array.from(record.addedNodes).some(relevant)
+        || Array.from(record.removedNodes).some(relevant)) {
+        requestRender();
+        return;
+      }
+    }
   }
 
   // ---------- 快捷键 ----------
@@ -940,14 +980,16 @@
   initData();
 
   // 输入走捕获阶段的 input 事件（React 受控组件也会触发），DOM 增删走全局观察器
-  document.addEventListener('input', requestRender, true);
+  document.addEventListener('input', onInput, true);
   window.addEventListener('keydown', onHotkey);
 
   // 原生 <dialog> 的打开/关闭不一定伴随 DOM 增删（重新打开时内容还在），
   // 弹窗里看帖时靠 toggle 事件补一次渲染
-  document.addEventListener('toggle', requestRender, true);
+  document.addEventListener('toggle', (e) => {
+    if (enabled && e.target.matches && e.target.matches(DIALOG_ANY_SELECTOR)) requestRender();
+  }, true);
 
-  new MutationObserver(requestRender).observe(document.documentElement, {
+  new MutationObserver(onMutations).observe(document.documentElement, {
     childList: true,
     subtree: true,
   });
