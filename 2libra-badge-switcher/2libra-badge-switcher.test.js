@@ -341,10 +341,10 @@ globalThis.window.location.pathname = savedPath;
 // ---- 状态栏布局必须让高度恒定：文案变化只能省略，不能换行把弹窗里的正文顶下去 ----
 const barCss = T.barCss();
 eq(/flex-wrap:nowrap/.test(barCss), true, '状态栏单行不换行');
-eq(/height:20px/.test(barCss), true, '状态栏固定高度 20px');
-eq(/min-height:20px/.test(barCss) && /max-height:20px/.test(barCss), true, '状态栏上下限高度固定（不被内容撑高）');
+eq(/height:52px/.test(barCss), true, '状态栏固定高度 52px');
+eq(/min-height:52px/.test(barCss) && /max-height:52px/.test(barCss), true, '状态栏上下限高度固定（不被内容撑高）');
 eq(/overflow:hidden/.test(barCss) && /white-space:nowrap/.test(barCss), true, '溢出裁剪 + 不换行，高度不随文案变化');
-eq(/height:16px/.test(T.barBtnCss('')), true, '按钮固定高度，不撑高状态栏');
+eq(/height:28px/.test(T.barBtnCss('')), true, '按钮固定高度，不撑高状态栏');
 eq(/flex:0 0 auto/.test(T.barBtnCss('')), true, '按钮不收缩，操作入口始终完整');
 eq(/min-width:0/.test(T.barTextCss('text')) && /text-overflow:ellipsis/.test(T.barTextCss('text')), true, '长文案用省略号收在一行');
 eq(/flex:0 0 auto/.test(T.barTextCss('count')), true, '字数不参与收缩');

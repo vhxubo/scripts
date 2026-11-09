@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         2libra 评论金币徽章助手
 // @namespace    https://vhxubo.local/2libra-badge-switcher
-// @version      1.5.4
-// @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵或两枚同戴时改为摘下）；持有「走个面」徽章时在状态栏最左侧提供活跃度 +20% 的一键佩戴/摘下入口（与评论字数、金币费用无关，不参与费用推荐）；每日潘多拉事件优先于徽章逻辑：回归起点锁定徽章时不再给切换按钮、妙笔生花固定费用/多说多写免评论费时徽章退出计费、金币升降机按 ±% 乘算费用、多说多写/小表情给出约束提示；文案与告警阈值由徽章属性与事件文案现算；帖子弹窗（列表页点击帖子时用原生 dialog 渲染）里的评论框同样注入，且状态栏固定 20px 单行高度、文案变长只省略不换行，弹窗动画与打字都不会把正文顶得上下跳动；切换通过 /api/badges/equip 完成，切换前自动检查是否收费；内置自动更新：@updateURL/@downloadURL 指向 GitHub raw，由油猴管理器自动检查并升级（raw 仅缓存约 5 分钟，GitHub Actions 校验版本号递增）。
+// @version      1.6.0
+// @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵或两枚同戴时改为摘下）；持有「走个面」徽章时在状态栏最左侧提供活跃度 +20% 的一键佩戴/摘下入口（与评论字数、金币费用无关，不参与费用推荐）；每日潘多拉事件优先于徽章逻辑：回归起点锁定徽章时不再给切换按钮、妙笔生花固定费用/多说多写免评论费时徽章退出计费、金币升降机按 ±% 乘算费用、多说多写/小表情给出约束提示；文案与告警阈值由徽章属性与事件文案现算；帖子弹窗（列表页点击帖子时用原生 dialog 渲染）里的评论框同样注入，且状态栏采用定高响应式工具条、长文案省略显示，弹窗动画与打字都不会把正文顶得上下跳动；切换通过 /api/badges/equip 完成，切换前自动检查是否收费；内置自动更新：@updateURL/@downloadURL 指向 GitHub raw，由油猴管理器自动检查并升级（raw 仅缓存约 5 分钟，GitHub Actions 校验版本号递增）。
 // @author       vhxubo
 // @match        https://2libra.com/*
 // @run-at       document-idle
@@ -600,13 +600,74 @@
     return ta && ta.value ? ta.value : '';
   }
 
-  // 状态栏固定高度的单行布局：
-  // 字数、费用、告警、按钮文案每敲一个字都可能变长变短。以前是 flex-wrap:wrap，
-  // 文案变长就会折成两行（18px → 41px），把下面的编辑器和弹窗里的正文整体顶下去；
-  // 文案变短又弹回来，看起来就是「文字跳动」——在 88vh 的帖子弹窗里尤其明显。
-  // 这里改成 nowrap + 常量高度 + 溢出省略：状态栏自身高度永远不变，文字再长也只做省略。
-  const BAR_HEIGHT = 20;
-  const BAR_BTN_HEIGHT = 16;
+  // 每种宽度下保持定高，输入和推荐变化不会推动编辑器。
+  const BAR_HEIGHT = 52;
+  const BAR_BTN_HEIGHT = 28;
+
+  function ensureBarStyles() {
+    if (document.querySelector('#two-libra-badge-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'two-libra-badge-styles';
+    style.textContent = `
+      [data-badge-switcher] {
+        --badge-accent:#087f8c; --badge-soft:#e8f5f5;
+        --badge-border:#d7e5e7; --badge-surface:#f6fafb; --badge-ink:#344d59;
+        container-type:inline-size;
+        color:var(--badge-ink);
+        background:var(--badge-surface);
+        border:1px solid var(--badge-border);
+        border-left:3px solid var(--badge-accent);
+        border-radius:10px;
+        font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+      }
+      [data-badge-switcher] button {
+        color:var(--badge-accent); background:var(--badge-soft);
+        border-color:var(--badge-border);
+      }
+      [data-badge-switcher] button:hover:not(:disabled) {
+        background:var(--badge-border);
+      }
+      [data-badge-switcher] button:focus-visible {
+        outline:2px solid var(--badge-accent); outline-offset:2px;
+      }
+      [data-badge-switcher] button:disabled { cursor:wait; opacity:.55; }
+      [data-badge-switcher] .badge-count {
+        color:var(--badge-accent); font-weight:700; font-size:14px;
+        padding-right:10px; border-right:1px solid var(--badge-border);
+        font-family:ui-monospace,"SFMono-Regular",Consolas,monospace;
+      }
+      [data-badge-switcher] .badge-status { flex:1 1 auto; }
+      [data-badge-switcher] .badge-hint:empty { display:none; }
+      [data-badge-switcher] .badge-action {
+        background:var(--badge-accent); color:#fff; border-color:transparent;
+      }
+      [data-badge-switcher] .badge-action:hover:not(:disabled) { filter:brightness(.92); background:var(--badge-accent); }
+      @media (prefers-color-scheme:dark) {
+        [data-badge-switcher] {
+          --badge-accent:#74d3db; --badge-soft:#203b43;
+          --badge-border:#36505a; --badge-surface:#1d2b33; --badge-ink:#d1e0e5;
+        }
+        [data-badge-switcher] .badge-action { color:#142e35; }
+      }
+      @container (max-width:620px) {
+        [data-badge-switcher] .badge-hint { display:none; }
+        [data-badge-switcher] button { max-width:35%; }
+      }
+      @media (max-width:600px) {
+        [data-badge-switcher] {
+          display:grid!important; grid-template-columns:auto minmax(0,1fr);
+          grid-template-rows:28px 20px 28px; gap:4px 10px!important;
+          height:104px!important; min-height:104px!important; max-height:104px!important;
+        }
+        [data-badge-switcher] .badge-count { grid-column:1; grid-row:1; }
+        [data-badge-switcher] .badge-status { grid-column:2; grid-row:1; }
+        [data-badge-switcher] .badge-hint { display:block; grid-column:1 / -1; grid-row:2; }
+        [data-badge-switcher] .badge-activity { grid-column:1; grid-row:3; max-width:100%!important; }
+        [data-badge-switcher] .badge-action { grid-column:2; grid-row:3; justify-self:end; max-width:100%; }
+      }
+    `;
+    (document.head || document.body).appendChild(style);
+  }
 
   function barCss() {
     return [
@@ -614,17 +675,17 @@
       'flex-wrap:nowrap',
       'align-items:center',
       'justify-content:flex-end',
-      'gap:0 8px',
+      'gap:0 12px',
       'box-sizing:border-box',
       `height:${BAR_HEIGHT}px`,
       `min-height:${BAR_HEIGHT}px`,
       `max-height:${BAR_HEIGHT}px`,
       'overflow:hidden',
-      'font-size:11px',
-      'line-height:16px',
+      'font-size:12px',
+      'line-height:18px',
       'white-space:nowrap',
-      'margin:0 2px 4px 0',
-      'opacity:.8',
+      'margin:0 0 8px',
+      'padding:8px 10px',
       'user-select:none',
     ].join(';');
   }
@@ -635,13 +696,13 @@
       'flex:0 0 auto',
       'box-sizing:border-box',
       `height:${BAR_BTN_HEIGHT}px`,
-      'padding:0 8px',
-      'border:1px solid currentColor',
+      'padding:0 10px',
+      'border:1px solid',
       'border-radius:6px',
-      'background:transparent',
       'font-family:inherit',
-      'font-size:11px',
-      'line-height:14px',
+      'font-size:12px',
+      'font-weight:600',
+      'line-height:26px',
       'white-space:nowrap',
       'overflow:hidden',
       'text-overflow:ellipsis',
@@ -658,6 +719,7 @@
   }
 
   function makeBar() {
+    ensureBarStyles();
     const bar = document.createElement('div');
     bar.setAttribute(BAR_FLAG, '');
     bar.style.cssText = barCss();
@@ -666,6 +728,7 @@
     // 未持有该徽章时整颗按钮隐藏（不占位、不影响原有布局）
     const activityBtn = document.createElement('button');
     activityBtn.type = 'button';
+    activityBtn.className = 'badge-activity';
     activityBtn.style.cssText = barBtnCss('margin-right:auto;display:none;max-width:40%');
     activityBtn.addEventListener('click', toggleActivityBadge);
     bar.__activityBtn = activityBtn;
@@ -674,6 +737,9 @@
     const countEl = document.createElement('span');
     const statusEl = document.createElement('span');
     const hintEl = document.createElement('span');
+    countEl.className = 'badge-count';
+    statusEl.className = 'badge-status';
+    hintEl.className = 'badge-hint';
     countEl.style.cssText = barTextCss('count');
     statusEl.style.cssText = barTextCss('text');
     hintEl.style.cssText = barTextCss('text');
@@ -686,6 +752,7 @@
 
     const btn = document.createElement('button');
     btn.type = 'button';
+    btn.className = 'badge-action';
     btn.style.cssText = barBtnCss('');
     btn.addEventListener('click', () => {
       const act = bar.__action;
@@ -767,7 +834,8 @@
       const locked = !!(pe.active && pe.lockBadge);
       setText(activityBtn, activityLabel(activityBadge, worn));
       setStyle(activityBtn, 'display', '');
-      setStyle(activityBtn, 'color', worn ? '#16a34a' : '');
+      setStyle(activityBtn, 'color', worn ? 'var(--badge-accent)' : '');
+      activityBtn.setAttribute('aria-pressed', String(worn));
       setStyle(activityBtn, 'fontWeight', worn ? '600' : '');
       setStyle(activityBtn, 'opacity', locked ? '.5' : '');
       activityBtn.disabled = busy;
@@ -946,17 +1014,21 @@
     if (!document.body) return;
     const el = document.createElement('div');
     el.textContent = msg;
+    el.setAttribute('role', isErr ? 'alert' : 'status');
     el.style.cssText = [
       'position:fixed',
       'right:16px',
       'bottom:16px',
       'z-index:99999',
-      'padding:8px 14px',
+      'padding:12px 16px',
+      'box-shadow:0 8px 28px #0002',
+      'line-height:1.6',
+      'font-family:system-ui,sans-serif',
       'border-radius:8px',
       'font-size:13px',
       'color:#fff',
       'max-width:80vw',
-      isErr ? 'background:#dc2626' : 'background:rgba(0,0,0,.78)',
+      isErr ? 'background:#dc2626' : 'background:#176773',
     ].join(';');
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 2500);
