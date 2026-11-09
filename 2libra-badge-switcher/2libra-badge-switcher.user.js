@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         2libra 评论金币徽章助手
 // @namespace    https://vhxubo.local/2libra-badge-switcher
-// @version      1.6.3
+// @version      1.6.4
 // @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵或两枚同戴时改为摘下）；持有「走个面」徽章时在状态栏最左侧提供活跃度 +20% 的一键佩戴/摘下入口（与评论字数、金币费用无关，不参与费用推荐）；每日潘多拉事件优先于徽章逻辑：回归起点锁定徽章时不再给切换按钮、妙笔生花固定费用/多说多写免评论费时徽章退出计费、金币升降机按 ±% 乘算费用、多说多写/小表情给出约束提示；文案与告警阈值由徽章属性与事件文案现算；帖子弹窗（列表页点击帖子时用原生 dialog 渲染）里的评论框同样注入，且状态栏采用定高响应式工具条、长文案省略显示，弹窗动画与打字都不会把正文顶得上下跳动；切换通过 /api/badges/equip 完成，切换前自动检查是否收费；内置自动更新：@updateURL/@downloadURL 指向 GitHub raw，由油猴管理器自动检查并升级（raw 仅缓存约 5 分钟，GitHub Actions 校验版本号递增）。
 // @author       vhxubo
 // @match        https://2libra.com/*
@@ -28,6 +28,7 @@
   let activityBadge = null;                  // 「走个面」活跃度徽章（仅在状态栏最左提供快捷开关）
   let equipped = new Set();                  // 当前已佩戴徽章 badge_id 集合
   let pandoraBox = null;                     // 今日潘多拉盒子（来自 /api/pandora/today 的 d.box）
+  let activityPending = ''; // 走个面操作：佩戴中 / 摘下中
   let busy = false;                          // 切换请求进行中
   let menuIds = [];
 
@@ -143,10 +144,10 @@
     return (badge && (badge.name || (badge.attributes && badge.attributes.badge_name))) || ACTIVITY_BADGE_NAME;
   }
 
-  // 按钮文案：未佩戴「走个面 活跃度 +20%」，佩戴后加 ✓
-  function activityLabel(ub, worn) {
+  // 按钮文案：桌面明确佩戴动作，窄屏省略动作与「活跃度」，佩戴后加 ✓
+  function activityLabel(ub, worn, compact = false) {
     const gain = activityGain(ub);
-    return `${worn ? '✓ ' : ''}${activityName(ub)} ${gain == null ? '活跃度加成' : `活跃度 +${gain}%`}`;
+    return `${worn ? '✓ ' : compact ? '' : '佩戴'}${activityName(ub)} ${gain == null ? '活跃度加成' : `${compact ? '' : '活跃度 '}+${gain}%`}`;
   }
 
   // ---------- 潘多拉事件（纯函数，供测试） ----------
@@ -527,23 +528,33 @@
       toast(`潘多拉「${pe.name}」生效中：下次开盒前无法佩戴徽章`, true);
       return;
     }
-    const name = activityName(activityBadge);
-    if (equipped.has(activityBadge.badge_id)) {
-      await unequip(activityBadge);
-      return;
-    }
+    const badge = activityBadge;
+    const name = activityName(badge);
+    const removing = equipped.has(badge.badge_id);
+    activityPending = removing ? '摘下中…' : '佩戴中…';
     busy = true;
-    await refreshEquipped();
     requestRender();
     try {
-      if (!(await equipBadge(activityBadge))) return;
-      equipped.add(activityBadge.badge_id);
-      const gain = activityGain(activityBadge);
-      toast(`已佩戴「${name}」${gain == null ? '，活跃度加成已生效' : `，活跃度 +${gain}%`}`);
+      await refreshEquipped();
+      if (removing) {
+        await apiJson('/api/badges/equip', {
+          method: 'POST',
+          body: JSON.stringify({ badge_id: badge.badge_id, equip: false }),
+        });
+        equipped.delete(badge.badge_id);
+        toast(`已摘下「${name}」`);
+      } else {
+        if (!(await equipBadge(badge))) return;
+        equipped.add(badge.badge_id);
+        const gain = activityGain(badge);
+        toast(`已佩戴「${name}」${gain == null ? '，活跃度加成已生效' : `，活跃度 +${gain}%`}`);
+      }
     } catch (e) {
-      toast(`佩戴「${name}」失败：${errText(e)}`, true);
+      toast(`${removing ? '摘下' : '佩戴'}「${name}」失败：${errText(e)}`, true);
     } finally {
+      activityPending = '';
       busy = false;
+      requestRender();
       refreshEquipped(true);
     }
   }
@@ -641,7 +652,11 @@
       }
       [data-badge-switcher] .badge-status { flex:1 1 auto; }
       [data-badge-switcher] .badge-hint { max-width:26%; }
-      [data-badge-switcher] .badge-activity { width:156px; }
+      [data-badge-switcher] .badge-activity { width:180px; }
+      [data-badge-switcher] .badge-activity-compact { display:none; }
+      [data-badge-switcher] .badge-activity-separator {
+        flex:0 0 1px; height:14px; background:var(--badge-border);
+      }
       [data-badge-switcher] .badge-hint:empty { display:none; }
       [data-badge-switcher] .badge-action {
         width:184px; max-width:30%;
@@ -650,6 +665,9 @@
       [data-badge-switcher] .badge-action:hover:not(:disabled) { background:var(--badge-border); }
       @container (max-width:620px) {
         [data-badge-switcher] .badge-hint { display:none; }
+        [data-badge-switcher] .badge-activity { width:120px; }
+        [data-badge-switcher] .badge-activity-full { display:none; }
+        [data-badge-switcher] .badge-activity-compact { display:inline; }
         [data-badge-switcher] button { max-width:35%; }
       }
     `;
@@ -717,9 +735,20 @@
     activityBtn.type = 'button';
     activityBtn.className = 'badge-activity';
     activityBtn.style.cssText = barBtnCss('margin-right:auto;display:none;max-width:30%');
+    for (const variant of ['full', 'compact']) {
+      const label = document.createElement('span');
+      label.className = `badge-activity-${variant}`;
+      activityBtn.appendChild(label);
+    }
     activityBtn.addEventListener('click', toggleActivityBadge);
     bar.__activityBtn = activityBtn;
     bar.appendChild(activityBtn);
+    const separator = document.createElement('span');
+    separator.className = 'badge-activity-separator';
+    separator.setAttribute('aria-hidden', 'true');
+    separator.style.display = 'none';
+    bar.__activitySeparator = separator;
+    bar.appendChild(separator);
 
     const countEl = document.createElement('span');
     const statusEl = document.createElement('span');
@@ -819,7 +848,14 @@
       const worn = equipped.has(activityBadge.badge_id);
       const gain = activityGain(activityBadge);
       const locked = !!(pe.active && pe.lockBadge);
-      setText(activityBtn, activityLabel(activityBadge, worn));
+      const lockLabel = `潘多拉锁定中${pe.expireAt ? ` · 至 ${fmtTime(pe.expireAt)}` : ''}`;
+      const fullLabel = activityPending || (locked ? lockLabel : activityLabel(activityBadge, worn));
+      const compactLabel = activityPending || (locked ? lockLabel : activityLabel(activityBadge, worn, true));
+      setText(activityBtn.children[0], fullLabel);
+      setText(activityBtn.children[1], compactLabel);
+      setStyle(bar.__activitySeparator, 'display', '');
+      activityBtn.setAttribute('aria-busy', String(!!activityPending));
+      activityBtn.setAttribute('aria-disabled', String(locked || busy));
       setStyle(activityBtn, 'display', '');
       setStyle(activityBtn, 'color', worn ? 'var(--badge-success)' : '');
       activityBtn.setAttribute('aria-pressed', String(worn));
@@ -827,13 +863,15 @@
       setStyle(activityBtn, 'opacity', locked ? '.5' : '');
       activityBtn.disabled = busy;
       activityBtn.title = locked
-        ? `潘多拉「${pe.name}」生效中：下次开盒前无法佩戴徽章`
-        : `${worn ? '摘下' : '佩戴'}「${activityName(activityBadge)}」${gain == null ? '' : `，活跃度 +${gain}%`}（与评论字数无关）`;
+        ? `潘多拉「${pe.name}」锁定中${pe.expireAt ? `，至 ${fmtTime(pe.expireAt)}` : '，下次开盒前无法佩戴徽章'}`
+        : `${worn ? '摘下' : '佩戴'}「${activityName(activityBadge)}」${gain == null ? '' : `，活跃度 +${gain}%`}（点击${worn ? '摘下' : '佩戴'}）`;
+      activityBtn.setAttribute('aria-label', `${fullLabel}，${activityBtn.title}`);
     } else {
       setStyle(activityBtn, 'display', 'none');
+      setStyle(bar.__activitySeparator, 'display', 'none');
     }
 
-    if (busy) {
+    if (busy && !activityPending) {
       setText(btnEl, '处理中…');
       setStyle(btnEl, 'display', '');
       btnEl.disabled = true;
@@ -841,7 +879,7 @@
       setText(btnEl, model.btn);
       btnEl.title = model.btn;
       setStyle(btnEl, 'display', '');
-      btnEl.disabled = false;
+      btnEl.disabled = busy;
       bar.__action = model.target
         ? { type: 'switch', badge: model.target }
         : { type: 'unequip', badge: model.unequip };
