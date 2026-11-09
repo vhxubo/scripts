@@ -46,7 +46,7 @@ globalThis.requestAnimationFrame = () => {};
 
 // ---- 把内部函数导出注入 IIFE 末尾 ----
 const EXPORT =
-  ';globalThis.__t={baseCost,badgeCost,classifyBadges,findActivityBadge,activityGain,activityLabel,recommend,currentCostBadge,barModel,jwtDecode,normalizeEquipped,isPostDetail,dialogAllowsBar,inCommentContext,barCss,barBtnCss,barTextCss,readCookie,pandoraActive,pandoraEffect,fmtTime,getPair:()=>pair};';
+  ';globalThis.__t={baseCost,badgeCost,classifyBadges,findActivityBadge,activityGain,activityLabel,recommend,currentCostBadge,barModel,jwtDecode,normalizeEquipped,isPostDetail,dialogAllowsBar,inCommentContext,barCss,barBtnCss,barTextCss,readCookie,pandoraActive,pandoraEffect,fmtTime,cachedRefresh,syncCommentState,getPair:()=>pair};';
 const closer = '})();';
 const last = src.lastIndexOf(closer);
 if (last === -1) { console.error('未找到 IIFE 结束标记'); process.exit(1); }
@@ -522,5 +522,75 @@ eq(frames.length, 1, '移除编辑器触发清理流程');
 frames.shift()();
 document.querySelectorAll = originalQuery;
 
-console.log(`\n${passed} 通过, ${failed} 失败`);
-process.exit(failed ? 1 : 0);
+// ---- 异步缓存：真实调用调度器，使用可控时间和延迟响应 ----
+(async () => {
+  const realNow = Date.now;
+  const realTimeout = globalThis.setTimeout;
+  const realClear = globalThis.clearTimeout;
+  let now = 1000000;
+  Date.now = () => now;
+  document.cookie = 'access_token=x.' + Buffer.from(JSON.stringify({ sub: 'user' })).toString('base64url') + '.x';
+  try {
+    let calls = 0;
+    let finish;
+    const refresh = T.cachedRefresh(60000, () => {
+      calls++;
+      return new Promise((resolve) => { finish = resolve; });
+    });
+    const first = refresh();
+    eq(refresh(), first, '并发刷新复用同一个 Promise');
+    await Promise.resolve();
+    eq(calls, 1, '并发刷新只发送一次请求');
+    finish();
+    await first;
+    await refresh();
+    eq(calls, 1, '冷却期内不重复请求');
+    now += 60000;
+    const second = refresh();
+    await Promise.resolve();
+    eq(calls, 2, '60 秒到期后允许查询');
+    finish();
+    await second;
+    const forced = refresh(true);
+    await Promise.resolve();
+    eq(calls, 3, '手动刷新绕过缓存');
+    finish();
+    await forced;
+
+    let errors = 0;
+    const failing = T.cachedRefresh(60000, async () => { errors++; throw new Error('offline'); });
+    await failing();
+    now += 60000;
+    await failing();
+    eq(errors, 1, '失败后至少等待两分钟');
+    now += 60000;
+    await failing();
+    eq(errors, 2, '两分钟后重试');
+    now += 239999;
+    await failing();
+    eq(errors, 2, '连续失败退避至四分钟');
+    now++;
+    await failing();
+    eq(errors, 3, '四分钟到期重试');
+
+    let timers = 0;
+    globalThis.setTimeout = () => { timers++; return 1; };
+    globalThis.clearTimeout = () => {};
+    document.hidden = true;
+    T.syncCommentState();
+    eq(timers, 0, '后台不启动同步定时器');
+    document.hidden = false;
+    document.querySelectorAll = () => [];
+    T.syncCommentState();
+    eq(timers, 0, '没有评论框不启动同步定时器');
+    document.querySelectorAll = () => [{ closest: () => ({}) }];
+    T.syncCommentState();
+    eq(timers, 1, '打开的评论弹窗启动低频定时器');
+  } finally {
+    Date.now = realNow;
+    globalThis.setTimeout = realTimeout;
+    globalThis.clearTimeout = realClear;
+  }
+  console.log(`\n${passed} 通过, ${failed} 失败`);
+  process.exit(failed ? 1 : 0);
+})().catch((error) => { console.error(error); process.exit(1); });

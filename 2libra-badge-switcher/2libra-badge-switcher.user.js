@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         2libra 评论金币徽章助手
 // @namespace    https://vhxubo.local/2libra-badge-switcher
-// @version      1.5.3
+// @version      1.5.4
 // @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵或两枚同戴时改为摘下）；持有「走个面」徽章时在状态栏最左侧提供活跃度 +20% 的一键佩戴/摘下入口（与评论字数、金币费用无关，不参与费用推荐）；每日潘多拉事件优先于徽章逻辑：回归起点锁定徽章时不再给切换按钮、妙笔生花固定费用/多说多写免评论费时徽章退出计费、金币升降机按 ±% 乘算费用、多说多写/小表情给出约束提示；文案与告警阈值由徽章属性与事件文案现算；帖子弹窗（列表页点击帖子时用原生 dialog 渲染）里的评论框同样注入，且状态栏固定 20px 单行高度、文案变长只省略不换行，弹窗动画与打字都不会把正文顶得上下跳动；切换通过 /api/badges/equip 完成，切换前自动检查是否收费；内置自动更新：@updateURL/@downloadURL 指向 GitHub raw，由油猴管理器自动检查并升级（raw 仅缓存约 5 分钟，GitHub Actions 校验版本号递增）。
 // @author       vhxubo
 // @match        https://2libra.com/*
@@ -395,58 +395,64 @@
     return data.d;
   }
 
-  // 拉取徽章数据；并发调用（菜单刷新 + visibilitychange）复用同一次请求
-  let initPromise = null;
-  function initData() {
-    if (initPromise) return initPromise;
-    initPromise = doInitData().finally(() => {
-      initPromise = null;
-    });
-    return initPromise;
+  // 各接口独立缓存、合并并发请求；失败保留旧数据并退避至最多 10 分钟。
+  function cachedRefresh(interval, load) {
+    let pending = null;
+    let nextAt = 0;
+    let failures = 0;
+    return function (force = false) {
+      if (pending) return pending;
+      if (!force && Date.now() < nextAt) return Promise.resolve();
+      const jwt = jwtDecode(readCookie('access_token'));
+      if (!jwt || !jwt.sub) return Promise.resolve();
+      pending = Promise.resolve().then(() => load(jwt)).then(() => {
+        failures = 0;
+        nextAt = Date.now() + interval;
+      }).catch(() => {
+        failures++;
+        nextAt = Date.now() + Math.min(600000, 60000 * 2 ** Math.min(failures, 4));
+      }).finally(() => {
+        pending = null;
+        requestRender();
+      });
+      return pending;
+    };
   }
 
-  async function doInitData() {
-    const token = readCookie('access_token');
-    const jwt = token && jwtDecode(token);
-    if (!jwt || !jwt.sub) return; // 未登录或 token 解析失败，保持仅字数模式
-    try {
-      const my = await apiJson('/api/badges/my');
-      pair = classifyBadges(my);
-      activityBadge = findActivityBadge(my);
-    } catch (e) {
-      pair = { fixed: null, percent: null };
-      activityBadge = null;
-    }
-    await refreshEquipped();
-    refreshPandora(); // 不阻塞首屏徽章数据
+  const refreshBadges = cachedRefresh(600000, async () => {
+    const my = await apiJson('/api/badges/my');
+    pair = classifyBadges(my);
+    activityBadge = findActivityBadge(my);
+  });
+
+  const refreshEquipped = cachedRefresh(60000, async (jwt) => {
+    const eq = await apiJson(`/api/badges/user/${jwt.sub}/equipped`);
+    equipped = new Set(normalizeEquipped(eq));
+  });
+
+  const refreshPandora = cachedRefresh(300000, async () => {
+    const d = await apiJson('/api/pandora/today');
+    pandoraBox = d && d.box ? d.box : d && d.event_code ? d : null;
+  });
+
+  function initData(force = false) {
+    return Promise.all([refreshBadges(force), refreshEquipped(force), refreshPandora(force)]);
   }
 
-  // 拉取今日潘多拉盒子（事件优先级高于徽章）；失败按无事件处理，不影响徽章功能。
-  // /api/pandora/today 返回 { box, can_open, has_box, active_extended }，事件在 box 上；
-  // 兼容直接返回盒子对象或包一层 payload 的形态
-  async function refreshPandora() {
-    const token = readCookie('access_token');
-    if (!token) return;
-    try {
-      const d = await apiJson('/api/pandora/today');
-      pandoraBox = d && d.box ? d.box : d && d.event_code ? d : null;
-    } catch (e) {
-      pandoraBox = null;
-    }
-    requestRender();
+  // 定时器仅在前台有打开的评论框时存在；输入/聚焦/重新打开共用缓存。
+  let syncTimer = null;
+  function hasOpenCommentEditor() {
+    return Array.from(document.querySelectorAll(EDITOR_SELECTOR)).some((editor) =>
+      inCommentContext(editor) && (!dialogOf(editor) || !!openDialogOf(editor)));
   }
 
-  async function refreshEquipped() {
-    const token = readCookie('access_token');
-    const jwt = token && jwtDecode(token);
-    if (!jwt || !jwt.sub) return;
-    try {
-      const eq = await apiJson(`/api/badges/user/${jwt.sub}/equipped`);
-      equipped = new Set(normalizeEquipped(eq));
-    } catch (e) {
-      /* 已佩戴状态获取失败时保留旧值 */
-    }
-    requestRender();
+  function syncCommentState() {
+    if (syncTimer !== null) clearTimeout(syncTimer);
+    syncTimer = null;
+    if (!enabled || document.hidden || !hasOpenCommentEditor()) return;
+    // 避免旧的 GET 响应覆盖正在进行的佩戴操作。
+    if (!busy) initData();
+    syncTimer = setTimeout(syncCommentState, 60000);
   }
 
   // 佩戴单枚徽章：先查本次切换是否收费，避免静默花金币。
@@ -482,6 +488,7 @@
       return;
     }
     busy = true;
+    await refreshEquipped();
     requestRender();
     try {
       if (!(await equipBadge(target))) return;
@@ -507,7 +514,7 @@
       toast(`切换失败：${errText(e)}`, true);
     } finally {
       busy = false;
-      refreshEquipped();
+      refreshEquipped(true);
     }
   }
 
@@ -526,6 +533,7 @@
       return;
     }
     busy = true;
+    await refreshEquipped();
     requestRender();
     try {
       if (!(await equipBadge(activityBadge))) return;
@@ -536,7 +544,7 @@
       toast(`佩戴「${name}」失败：${errText(e)}`, true);
     } finally {
       busy = false;
-      refreshEquipped();
+      refreshEquipped(true);
     }
   }
 
@@ -544,6 +552,7 @@
   async function unequip(badge) {
     if (busy || !badge) return;
     busy = true;
+    await refreshEquipped();
     requestRender();
     try {
       await apiJson('/api/badges/equip', {
@@ -556,7 +565,7 @@
       toast(`摘下失败：${errText(e)}`, true);
     } finally {
       busy = false;
-      refreshEquipped();
+      refreshEquipped(true);
     }
   }
 
@@ -793,6 +802,7 @@
 
   // ---------- 渲染 ----------
   function render() {
+    syncCommentState();
     if (!enabled) {
       removeBars();
       return;
@@ -839,7 +849,10 @@
     if (!enabled) return;
     const editor = e.target && typeof e.target.closest === 'function'
       ? e.target.closest(EDITOR_SELECTOR) : null;
-    if (editor && inCommentContext(editor)) requestRender(editor);
+    if (editor && inCommentContext(editor)) {
+      requestRender(editor);
+      syncCommentState();
+    }
   }
 
   let observedPath = window.location.pathname;
@@ -966,18 +979,18 @@
         saveEnabled();
         registerMenus();
         requestRender();
+        syncCommentState();
       }
     ));
     menuIds.push(GM_registerMenuCommand('重新拉取徽章与潘多拉数据', () => {
-      initData();
-      toast('已刷新徽章与潘多拉数据');
+      initData(true).then(() => toast('徽章与潘多拉数据刷新完成（失败时保留旧状态）'));
     }));
   }
 
   // ---------- 启动 ----------
   registerMenus();
   render();
-  initData();
+  if (enabled) initData();
 
   // 输入走捕获阶段的 input 事件（React 受控组件也会触发），DOM 增删走全局观察器
   document.addEventListener('input', onInput, true);
@@ -994,11 +1007,7 @@
     subtree: true,
   });
 
-  // 其他标签页/个人页里换徽章、开潘多拉盒子后，回到本页时同步佩戴状态与当前事件
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) {
-      refreshEquipped();
-      refreshPandora();
-    }
-  });
+  // 回到前台也遵守同一冷却时间，不因频繁切换标签页增加请求。
+  document.addEventListener('visibilitychange', syncCommentState);
+  document.addEventListener('focusin', onInput, true);
 })();
