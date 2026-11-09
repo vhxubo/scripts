@@ -42,7 +42,7 @@ globalThis.requestAnimationFrame = () => {};
 
 // ---- 把内部函数导出注入 IIFE 末尾 ----
 const EXPORT =
-  ';globalThis.__t={baseCost,badgeCost,classifyBadges,recommend,currentCostBadge,barModel,jwtDecode,normalizeEquipped,isPostDetail,dialogAllowsBar,readCookie,pandoraActive,pandoraEffect,fmtTime,getPair:()=>pair};';
+  ';globalThis.__t={baseCost,badgeCost,classifyBadges,findActivityBadge,activityGain,activityLabel,recommend,currentCostBadge,barModel,jwtDecode,normalizeEquipped,isPostDetail,dialogAllowsBar,readCookie,pandoraActive,pandoraEffect,fmtTime,getPair:()=>pair};';
 const closer = '})();';
 const last = src.lastIndexOf(closer);
 if (last === -1) { console.error('未找到 IIFE 结束标记'); process.exit(1); }
@@ -115,6 +115,33 @@ eq(c4.percent, null, 'coin_system_cost_percent 等近似字段不误判为减免
 const c5 = T.classifyBadges([...REAL_OTHERS, PERCENT]);
 eq(c5.percent && c5.percent.badge_id, PERCENT.badge_id, '混杂其他徽章时仍准确识别减免徽章（真实单 percent 用户形态）');
 eq(c5.fixed, null, '真实单 percent 用户 fixed=null');
+
+// ---- 「走个面」快捷开关：只认活跃度徽章，且绝不进入费用推荐 ----
+// 站点徽章库：id do_me_a_favor / 名称「走个面」/ 佩戴属性「活跃度增加提升 20%」
+// （/api/badges/my 的 attributes 采样为 daily_active_gain_percent: 0.2）
+const ZOU = REAL_OTHERS.find((b) => b.badge_id === 'u-zou');
+eq(T.findActivityBadge([PLAIN, FIXED, ZOU]).badge_id, 'u-zou', '识别持有的走个面徽章');
+eq(T.findActivityBadge([PLAIN, FIXED]), null, '未持有走个面时返回 null');
+eq(T.findActivityBadge(null), null, '非数组输入容错');
+eq(T.findActivityBadge([{ badge_id: 'zou-name', badge: { name: '走个面', attributes: null } }]).badge_id, 'zou-name', 'attributes 缺失时按名称兜底');
+eq(T.findActivityBadge([{ badge_id: 'zou-full', badge: { name: '2Libra 走个面儿', attributes: null } }]).badge_id, 'zou-full', '名称包含「走个面」也能识别');
+eq(T.findActivityBadge([{ badge_id: 'zou-attr', badge: { name: '别的名字', attributes: { daily_active_gain_percent: 0.2 } } }]).badge_id, 'zou-attr', '活跃度属性兜底识别');
+eq(T.findActivityBadge([{ badge_id: 'zou-cat', badge: { id: 'do_me_a_favor', name: '改名了', attributes: null } }]).badge_id, 'zou-cat', '按站点徽章 id 兜底识别');
+const ZOU_ID_ONLY = { id: 'zou-id-only', badge: { id: 'zou-id-only', name: '走个面', attributes: { daily_active_gain_percent: 0.2 } } };
+eq(T.findActivityBadge([ZOU_ID_ONLY]).badge_id, 'zou-id-only', 'badge.id 归一化为 badge_id');
+eq(T.findActivityBadge([{ badge: { name: '走个面', attributes: { daily_active_gain_percent: 0.2 } } }]), null, '缺 badge_id 的条目无法佩戴，忽略');
+eq(T.classifyBadges([ZOU]).fixed, null, '走个面不会被当成固定费用徽章');
+eq(T.classifyBadges([ZOU]).percent, null, '走个面不会被当成减免徽章');
+eq(T.activityGain(ZOU), 20, 'daily_active_gain_percent 0.2 → 20%');
+eq(T.activityGain({ badge: { attributes: { daily_active_gain_percent: 20 } } }), 20, '百分数形态 20 → 20%');
+eq(T.activityGain({ badge: { attributes: {} } }), null, '缺 active 属性返回 null');
+eq(T.activityGain(PLAIN), null, '普通徽章没有活跃度加成');
+eq(T.activityLabel(ZOU, false), '走个面 活跃度 +20%', '未佩戴时按钮显示名字与加成');
+eq(T.activityLabel(ZOU, true), '✓ 走个面 活跃度 +20%', '佩戴时按钮加勾');
+eq(T.activityLabel({ badge: { name: '走个面', attributes: null } }, false), '走个面 活跃度加成', '属性缺失时降级文案');
+eq(/function toggleActivityBadge\(/.test(src), true, '提供走个面一键佩戴/摘下入口');
+eq(/bar\.__activityBtn/.test(src), true, '状态栏持有独立的走个面按钮');
+eq(/margin-right:auto/.test(src), true, '走个面入口固定在状态栏最左侧');
 
 // ---- classifyBadges：同类多枚保留更省的一枚 ----
 const FIXED2 = { badge_id: 'fixed-2', badge: { name: '固定贵', attributes: { comment_cost: -12 } } };

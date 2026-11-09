@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         2libra 评论金币徽章助手
 // @namespace    https://vhxubo.local/2libra-badge-switcher
-// @version      1.5.0
-// @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵或两枚同戴时改为摘下）；每日潘多拉事件优先于徽章逻辑：回归起点锁定徽章时不再给切换按钮、妙笔生花固定费用/多说多写免评论费时徽章退出计费、金币升降机按 ±% 乘算费用、多说多写/小表情给出约束提示；文案与告警阈值由徽章属性与事件文案现算；帖子弹窗（列表页点击帖子时用原生 dialog 渲染）里的评论框同样注入；切换通过 /api/badges/equip 完成，切换前自动检查是否收费；内置自动更新：@updateURL/@downloadURL 指向 GitHub raw，由油猴管理器自动检查并升级（raw 仅缓存约 5 分钟，GitHub Actions 校验版本号递增）。
+// @version      1.5.1
+// @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵或两枚同戴时改为摘下）；持有「走个面」徽章时在状态栏最左侧提供活跃度 +20% 的一键佩戴/摘下入口（与评论字数、金币费用无关，不参与费用推荐）；每日潘多拉事件优先于徽章逻辑：回归起点锁定徽章时不再给切换按钮、妙笔生花固定费用/多说多写免评论费时徽章退出计费、金币升降机按 ±% 乘算费用、多说多写/小表情给出约束提示；文案与告警阈值由徽章属性与事件文案现算；帖子弹窗（列表页点击帖子时用原生 dialog 渲染）里的评论框同样注入；切换通过 /api/badges/equip 完成，切换前自动检查是否收费；内置自动更新：@updateURL/@downloadURL 指向 GitHub raw，由油猴管理器自动检查并升级（raw 仅缓存约 5 分钟，GitHub Actions 校验版本号递增）。
 // @author       vhxubo
 // @match        https://2libra.com/*
 // @run-at       document-idle
@@ -25,6 +25,7 @@
   // ---------- 状态 ----------
   let enabled = loadEnabled();
   let pair = { fixed: null, percent: null }; // 两类省金币徽章（来自 /api/badges/my）
+  let activityBadge = null;                  // 「走个面」活跃度徽章（仅在状态栏最左提供快捷开关）
   let equipped = new Set();                  // 当前已佩戴徽章 badge_id 集合
   let pandoraBox = null;                     // 今日潘多拉盒子（来自 /api/pandora/today 的 d.box）
   let busy = false;                          // 切换请求进行中
@@ -104,6 +105,48 @@
   function pctText(ratio) {
     const pct = Math.round(ratio * 100);
     return pct >= 0 ? `减免 ${pct}%` : `增加 ${-pct}%`;
+  }
+
+  // ---------- 「走个面」快捷开关（与评论字数无关） ----------
+  // 站点徽章库：id do_me_a_favor / 名称「走个面」/ 佩戴属性 daily_active_gain_percent 0.2
+  // （活跃度 +20%）。它不改变评论金币，所以不进入 classifyBadges 的费用推荐，
+  // 只在状态栏最左侧提供一个独立的佩戴/摘下入口。
+  const ACTIVITY_BADGE_ID = 'do_me_a_favor';
+  const ACTIVITY_BADGE_NAME = '走个面';
+
+  function isActivityBadge(badge) {
+    if (!badge) return false;
+    const attr = badge.attributes || {};
+    if (typeof attr.daily_active_gain_percent === 'number') return true;
+    const name = String(badge.name || attr.badge_name || '');
+    return badge.id === ACTIVITY_BADGE_ID || name.indexOf(ACTIVITY_BADGE_NAME) !== -1;
+  }
+
+  function findActivityBadge(list) {
+    for (const raw of Array.isArray(list) ? list : []) {
+      const ub = withBadgeId(raw);
+      if (ub && ub.badge_id && isActivityBadge(ub.badge)) return ub;
+    }
+    return null;
+  }
+
+  // 兼容 0.2（比例）与 20（百分数）两种下发形态；缺失时返回 null
+  function activityGain(ub) {
+    const attr = ub && ub.badge && ub.badge.attributes;
+    const v = attr && attr.daily_active_gain_percent;
+    if (typeof v !== 'number' || !isFinite(v)) return null;
+    return Math.round(v <= 1 ? v * 100 : v);
+  }
+
+  function activityName(ub) {
+    const badge = ub && ub.badge;
+    return (badge && (badge.name || (badge.attributes && badge.attributes.badge_name))) || ACTIVITY_BADGE_NAME;
+  }
+
+  // 按钮文案：未佩戴「走个面 活跃度 +20%」，佩戴后加 ✓
+  function activityLabel(ub, worn) {
+    const gain = activityGain(ub);
+    return `${worn ? '✓ ' : ''}${activityName(ub)} ${gain == null ? '活跃度加成' : `活跃度 +${gain}%`}`;
   }
 
   // ---------- 潘多拉事件（纯函数，供测试） ----------
@@ -369,8 +412,10 @@
     try {
       const my = await apiJson('/api/badges/my');
       pair = classifyBadges(my);
+      activityBadge = findActivityBadge(my);
     } catch (e) {
       pair = { fixed: null, percent: null };
+      activityBadge = null;
     }
     await refreshEquipped();
     refreshPandora(); // 不阻塞首屏徽章数据
@@ -404,7 +449,30 @@
     requestRender();
   }
 
-  // 切换徽章：先确认是否收费，再佩戴目标并尝试摘下另一枚（站点允许并存，避免叠加歧义）
+  // 佩戴单枚徽章：先查本次切换是否收费，避免静默花金币。
+  // 返回 true 表示已佩戴，false 表示用户取消。
+  async function equipBadge(target) {
+    let need = false;
+    let amount = 0;
+    try {
+      const ck = await apiJson('/api/badges/equip/check-cost');
+      need = !!(ck && ck.needCost);
+      amount = (ck && ck.costAmount) || 0;
+    } catch (e) {
+      /* 检查失败不阻塞切换 */
+    }
+    if (need && amount > 0) {
+      const ok = window.confirm(`本次切换徽章需消耗 ${amount} 金币，是否继续？`);
+      if (!ok) return false;
+    }
+    await apiJson('/api/badges/equip', {
+      method: 'POST',
+      body: JSON.stringify({ badge_id: target.badge_id, equip: true }),
+    });
+    return true;
+  }
+
+  // 切换费用徽章：佩戴目标并尝试摘下另一枚（站点允许并存，避免叠加歧义）
   async function switchTo(target) {
     if (busy || !target) return;
     // 防御：回归起点生效期间佩戴请求必然失败，直接拦截（状态栏正常时不会走到这里）
@@ -416,23 +484,7 @@
     busy = true;
     requestRender();
     try {
-      let need = false;
-      let amount = 0;
-      try {
-        const ck = await apiJson('/api/badges/equip/check-cost');
-        need = !!(ck && ck.needCost);
-        amount = (ck && ck.costAmount) || 0;
-      } catch (e) {
-        /* 检查失败不阻塞切换 */
-      }
-      if (need && amount > 0) {
-        const ok = window.confirm(`本次切换徽章需消耗 ${amount} 金币，是否继续？`);
-        if (!ok) return;
-      }
-      await apiJson('/api/badges/equip', {
-        method: 'POST',
-        body: JSON.stringify({ badge_id: target.badge_id, equip: true }),
-      });
+      if (!(await equipBadge(target))) return;
       equipped.add(target.badge_id);
 
       // 摘下另一枚费用徽章：失败必须让用户知道，否则两枚同戴会悄悄改变费用估算
@@ -453,6 +505,35 @@
       }
     } catch (e) {
       toast(`切换失败：${errText(e)}`, true);
+    } finally {
+      busy = false;
+      refreshEquipped();
+    }
+  }
+
+  // 「走个面」快捷开关：只看徽章是否佩戴，与评论字数/费用推荐完全无关。
+  // 只切换这一枚，不动费用徽章（站点允许同时佩戴多枚）。
+  async function toggleActivityBadge() {
+    if (busy || !activityBadge) return;
+    const pe = pandoraEffect(pandoraBox);
+    if (pe.active && pe.lockBadge) {
+      toast(`潘多拉「${pe.name}」生效中：下次开盒前无法佩戴徽章`, true);
+      return;
+    }
+    const name = activityName(activityBadge);
+    if (equipped.has(activityBadge.badge_id)) {
+      await unequip(activityBadge);
+      return;
+    }
+    busy = true;
+    requestRender();
+    try {
+      if (!(await equipBadge(activityBadge))) return;
+      equipped.add(activityBadge.badge_id);
+      const gain = activityGain(activityBadge);
+      toast(`已佩戴「${name}」${gain == null ? '，活跃度加成已生效' : `，活跃度 +${gain}%`}`);
+    } catch (e) {
+      toast(`佩戴「${name}」失败：${errText(e)}`, true);
     } finally {
       busy = false;
       refreshEquipped();
@@ -517,7 +598,36 @@
       'opacity:.8',
       'user-select:none',
     ].join(';');
-    for (let i = 0; i < 3; i++) bar.appendChild(document.createElement('span'));
+
+    // 最左侧的「走个面」快捷开关：margin-right:auto 让其余右对齐内容留在右边，
+    // 未持有该徽章时整颗按钮隐藏（不占位、不影响原有布局）
+    const activityBtn = document.createElement('button');
+    activityBtn.type = 'button';
+    activityBtn.style.cssText = [
+      'font-size:11px',
+      'line-height:1.4',
+      'padding:1px 8px',
+      'border:1px solid currentColor',
+      'border-radius:6px',
+      'background:transparent',
+      'cursor:pointer',
+      'margin-right:auto',
+      'display:none',
+    ].join(';');
+    activityBtn.addEventListener('click', toggleActivityBadge);
+    bar.__activityBtn = activityBtn;
+    bar.appendChild(activityBtn);
+
+    const countEl = document.createElement('span');
+    const statusEl = document.createElement('span');
+    const hintEl = document.createElement('span');
+    bar.__countEl = countEl;
+    bar.__statusEl = statusEl;
+    bar.__hintEl = hintEl;
+    bar.appendChild(countEl);
+    bar.appendChild(statusEl);
+    bar.appendChild(hintEl);
+
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.style.cssText = [
@@ -535,6 +645,7 @@
       if (act.type === 'switch') switchTo(act.badge);
       else unequip(act.badge);
     });
+    bar.__actionBtn = btn;
     bar.appendChild(btn);
     return bar;
   }
@@ -557,8 +668,12 @@
   // 只在文案/显隐真正变化时写 DOM，避免状态栏自身改动触发观察器循环
   function updateBar(editor, bar) {
     if (!bar) return;
-    const model = barModel(editorText(editor).length, pair, equipped, pandoraEffect(pandoraBox));
-    const [countEl, statusEl, hintEl, btnEl] = bar.children;
+    const pe = pandoraEffect(pandoraBox);
+    const model = barModel(editorText(editor).length, pair, equipped, pe);
+    const countEl = bar.__countEl;
+    const statusEl = bar.__statusEl;
+    const hintEl = bar.__hintEl;
+    const btnEl = bar.__actionBtn;
     setText(countEl, model.count);
     countEl.style.color = model.warn ? '#dc2626' : '';
     countEl.style.fontWeight = model.warn ? '600' : '';
@@ -569,6 +684,26 @@
       ? '#dc2626'
       : model.hint.startsWith('✓') ? '#16a34a' : model.hint ? '#d97706' : '';
     hintEl.style.fontWeight = model.warn ? '600' : '';
+
+    // 「走个面」入口：与字数、费用模型无关，只看是否持有/佩戴
+    const activityBtn = bar.__activityBtn;
+    if (activityBadge) {
+      const worn = equipped.has(activityBadge.badge_id);
+      const gain = activityGain(activityBadge);
+      const locked = !!(pe.active && pe.lockBadge);
+      setText(activityBtn, activityLabel(activityBadge, worn));
+      activityBtn.style.display = '';
+      activityBtn.style.color = worn ? '#16a34a' : '';
+      activityBtn.style.fontWeight = worn ? '600' : '';
+      activityBtn.style.opacity = locked ? '.5' : '';
+      activityBtn.disabled = busy;
+      activityBtn.title = locked
+        ? `潘多拉「${pe.name}」生效中：下次开盒前无法佩戴徽章`
+        : `${worn ? '摘下' : '佩戴'}「${activityName(activityBadge)}」${gain == null ? '' : `，活跃度 +${gain}%`}（与评论字数无关）`;
+    } else {
+      activityBtn.style.display = 'none';
+    }
+
     if (busy) {
       setText(btnEl, '处理中…');
       btnEl.style.display = '';
