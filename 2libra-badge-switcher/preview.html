@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2libra 徽章助手 · 效果预览</title>
+<style>
+:root{color-scheme:light;--color-primary:#176773;--color-primary-content:#fff;--color-base-100:#fff;--color-base-200:#edf3f6;--color-base-300:#cfdde5;--color-base-content:#293c4b;--color-success:#16844a;--color-error:#cf374f;--color-warning:#a56612;--page:#e5edf3;--muted:#627584}
+:root.dark{color-scheme:dark;--color-primary:#76cad3;--color-primary-content:#102c36;--color-base-100:#1c2c3b;--color-base-200:#24394a;--color-base-300:#3a5367;--color-base-content:#e1eaf1;--color-success:#75d79b;--color-error:#ff8191;--color-warning:#e4bc69;--page:#13212e;--muted:#9ab0bf}
+*{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--color-base-content);font:14px/1.7 "PingFang SC","Microsoft YaHei",sans-serif}main{max-width:1280px;margin:auto;padding:40px 28px 70px}header{border-left:5px solid var(--color-primary);padding-left:22px;margin-bottom:30px}.eyebrow{font:12px/1.5 ui-monospace,monospace;letter-spacing:2px;color:var(--muted)}h1{font:600 clamp(26px,4vw,44px)/1.3 "Songti SC",SimSun,serif;margin:10px 0}p{margin:8px 0;color:var(--muted)}h2{font-size:19px;margin:26px 0 12px}button,select,input{font:inherit}button,select{border:1px solid var(--color-base-300);background:var(--color-base-100);color:inherit;border-radius:6px;padding:6px 12px}button{cursor:pointer}button:hover{border-color:var(--color-primary)}button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0}.controls label{display:flex;gap:6px;align-items:center;color:var(--muted)}.stage,.sample{background:var(--color-base-100);border:1px solid var(--color-base-300);border-radius:10px;padding:18px;min-width:0}.editor{border:1px solid var(--color-base-300);border-radius:5px;overflow:hidden}.editor-tools{padding:5px 12px;background:var(--color-base-200);color:var(--muted);font:12px/1.8 ui-monospace,monospace}textarea{display:block;width:100%;min-height:100px;resize:vertical;border:0;padding:12px;background:var(--color-base-100);color:inherit;font:14px/1.7 inherit}.editor-footer{padding:6px 12px;display:flex;justify-content:space-between;color:var(--muted);font-size:11px;border-top:1px solid var(--color-base-300)}.grid{display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}.sample h3{font-size:14px;margin:0 0 4px}.sample p{font-size:12px;margin:0 0 14px}.sample .editor textarea{min-height:58px;height:58px}.viewport{max-width:100%;margin:auto;transition:width .15s}.sample-body{max-width:100%}.sample .summary{margin:10px 0 0;font-size:12px;color:var(--muted);overflow-wrap:anywhere}.tag{color:var(--color-primary);font:11px ui-monospace,monospace;margin-right:8px}.section-intro{display:flex;justify-content:space-between;gap:12px;align-items:center}.note{font-size:12px}dialog{width:min(920px,94vw);border:1px solid var(--color-base-300);border-radius:12px;background:var(--color-base-100);color:var(--color-base-content);padding:22px}dialog::backdrop{background:#102c3688}footer{margin-top:28px;color:var(--muted);font-size:12px}@media(max-width:600px){main{padding:24px 12px}.stage,.sample{padding:12px}.controls{gap:8px}.controls label{flex-wrap:wrap}header{padding-left:14px}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<main>
+<header><div class="eyebrow">2LIBRA / BADGE SWITCHER / v1.6.5</div><h1>每一种状态，都在这里。</h1><p>评论金币徽章助手效果预览 · 输入文字、佩戴徽章，观察同一条工具栏如何变化。</p></header>
+<div class="controls"><button id="theme">切换深色</button><button id="open-dialog">打开帖子弹窗</button><button id="reset">重置演示</button><span class="note">离线演示，操作仅修改本页模拟状态。</span></div>
+<h2>交互试用</h2>
+<div class="stage"><div class="controls">
+<label>费用徽章 <select id="wear"><option value="p">都听我说！ · 减免 30%</option><option value="f">前排打手 · 固定 8 金币</option><option value="none">未佩戴</option></select></label>
+<label>潘多拉 <select id="event"></select></label><label>宽度 <select id="width"><option value="100%">跟随页面</option><option value="620px">620 px</option><option value="375px">375 px</option><option value="320px">320 px</option></select></label>
+<label><input id="failure" type="checkbox">模拟请求失败</label></div>
+<div class="controls"><span class="note">填入字数</span><button data-length="36">36</button><button data-length="101">101</button><button data-length="1001">1001</button><button data-length="2001">2001</button><button data-length="5001">5001</button><span class="note">聚焦评论框后 Alt+B 切换省金币徽章</span></div>
+<div class="viewport" id="live"></div><p class="note">点击「走个面」体验佩戴／摘下进度。悬停工具条可查看完整提示。</p></div>
+<div class="section-intro"><h2>完整状态样本</h2><span class="note" id="sample-count"></span></div>
+<p class="note">每个样本独立；文字可编辑，按钮可操作。下方说明保留工具条被截断的完整信息。</p><div class="grid" id="samples"></div>
+<footer>工具条样式、费用模型及渲染函数取自当前 userscript；示例数据与操作均为本地模拟。自动更新、后台同步与真实 API 不在本页执行。</footer>
+</main>
+<dialog id="post-dialog"><div class="controls"><strong>帖子弹窗 · 评论区</strong><button id="close-dialog">关闭</button></div><p>模拟列表页打开帖子后的评论工具条。关闭再打开可保留内容和状态。</p><div id="dialog-editor"></div></dialog>
+<script>
+'use strict';
+const BAR_FLAG = 'data-badge-switcher';
+let pair, equipped, activityBadge, pandoraBox, busy=false, activityPending='';
+const badge=(id,name,attributes)=>({badge_id:id,badge:{id,name,attributes}});
+const F=badge('f','前排打手',{comment_cost:-8}),P=badge('p','都听我说！',{comment_cost_percent:.3}),A=badge('a','走个面',{daily_active_gain_percent:.2});
+const events={none:['无事件',null],lock:['回归起点',{lockBadge:true}],fixed:['妙笔生花',{fixedCost:5}],free:['多说多写 · 免费',{freeComment:true,minLength:100}],min:['多说多写 · 至少 100 字',{minLength:100}],up:['金币升降机 +20%',{modifierPct:20}],down:['金币升降机 -20%',{modifierPct:-20}],emoji:['小表情',{needEmoji:true}],other:['其他事件 · 无费用影响',{}]};
+function eventEffect(key){const [name,data]=events[key];return data?{active:true,name,expireAt:new Date(Date.now()+3600000*8).toISOString(),...data}:{active:false}}
+  function baseCost(len) {
+    return len > 5000 ? 200 : len > 2000 ? 120 : len > 1000 ? 60 : len > 100 ? 30 : 10;
+  }
+
+  // 某枚徽章下发表评论的预计扣费：
+  // - 固定扣费徽章（attributes.comment_cost，负数表示扣除）直接覆盖阶梯
+  // - 减免徽章（attributes.comment_cost_percent 为减免比例）在阶梯上打折
+  // - 其他/未佩戴不影响基础扣费
+  function badgeCost(len, ub) {
+    const attr = ub && ub.badge && ub.badge.attributes;
+    if (!attr) return baseCost(len);
+    if (typeof attr.comment_cost === 'number') return Math.abs(attr.comment_cost);
+    if (typeof attr.comment_cost_percent === 'number') {
+      return Math.round(baseCost(len) * (1 - attr.comment_cost_percent));
+    }
+    return baseCost(len);
+  }
+
+  // /api/badges/my 的条目可能用 badge_id，也可能只带 badge.id（与 equipped 接口同款差异），
+  // 统一归一化成 badge_id，避免切换时发出 badge_id: undefined
+  function badgeIdOf(ub) {
+    if (!ub) return '';
+    if (typeof ub.badge_id === 'string') return ub.badge_id;
+    if (ub.badge && typeof ub.badge.id === 'string') return ub.badge.id;
+    return '';
+  }
+
+  function withBadgeId(ub) {
+    const id = badgeIdOf(ub);
+    return id && ub.badge_id !== id ? Object.assign({}, ub, { badge_id: id }) : ub;
+  }
+
+  // 从 /api/badges/my 的列表里挑出两类评论费用徽章；同类多枚时保留更省的一枚。
+  // 只认 comment_cost / comment_cost_percent 字段，站内其他 attributes
+  // （float_percent、coin_system_cost_percent 等）不会被误判
+  function classifyBadges(list) {
+    const out = { fixed: null, percent: null };
+    for (const raw of Array.isArray(list) ? list : []) {
+      const ub = withBadgeId(raw);
+      const attr = ub && ub.badge && ub.badge.attributes;
+      if (!attr) continue;
+      if (typeof attr.comment_cost === 'number') {
+        if (!out.fixed || Math.abs(attr.comment_cost) < Math.abs(out.fixed.badge.attributes.comment_cost)) out.fixed = ub;
+      } else if (typeof attr.comment_cost_percent === 'number') {
+        if (!out.percent || attr.comment_cost_percent > out.percent.badge.attributes.comment_cost_percent) out.percent = ub;
+      }
+    }
+    return out;
+  }
+
+  // 徽章比例的中文描述：0.3 → 「减免 30%」，-0.2 → 「增加 20%」
+  function pctText(ratio) {
+    const pct = Math.round(ratio * 100);
+    return pct >= 0 ? `减免 ${pct}%` : `增加 ${-pct}%`;
+  }
+
+  // ---------- 「走个面」快捷开关（与评论字数无关） ----------
+  // 站点徽章库：id do_me_a_favor / 名称「走个面」/ 佩戴属性 daily_active_gain_percent 0.2
+  // （活跃度 +20%）。它不改变评论金币，所以不进入 classifyBadges 的费用推荐，
+  // 只在状态栏最左侧提供一个独立的佩戴/摘下入口。
+  const ACTIVITY_BADGE_ID = 'do_me_a_favor';
+  const ACTIVITY_BADGE_NAME = '走个面';
+
+  function isActivityBadge(badge) {
+    if (!badge) return false;
+    const attr = badge.attributes || {};
+    if (typeof attr.daily_active_gain_percent === 'number') return true;
+    const name = String(badge.name || attr.badge_name || '');
+    return badge.id === ACTIVITY_BADGE_ID || name.indexOf(ACTIVITY_BADGE_NAME) !== -1;
+  }
+
+  function findActivityBadge(list) {
+    for (const raw of Array.isArray(list) ? list : []) {
+      const ub = withBadgeId(raw);
+      if (ub && ub.badge_id && isActivityBadge(ub.badge)) return ub;
+    }
+    return null;
+  }
+
+  // 兼容 0.2（比例）与 20（百分数）两种下发形态；缺失时返回 null
+  function activityGain(ub) {
+    const attr = ub && ub.badge && ub.badge.attributes;
+    const v = attr && attr.daily_active_gain_percent;
+    if (typeof v !== 'number' || !isFinite(v)) return null;
+    return Math.round(v <= 1 ? v * 100 : v);
+  }
+
+  function activityName(ub) {
+    const badge = ub && ub.badge;
+    return (badge && (badge.name || (badge.attributes && badge.attributes.badge_name))) || ACTIVITY_BADGE_NAME;
+  }
+
+  // 按钮文案：桌面明确佩戴动作，窄屏省略动作与「活跃度」，佩戴后加 ✓
+  function activityLabel(ub, worn, compact = false) {
+    const gain = activityGain(ub);
+    return `${worn ? '✓ ' : compact ? '' : '佩戴'}${activityName(ub)} ${gain == null ? '活跃度加成' : `${compact ? '' : '活跃度 '}+${gain}%`}`;
+  }
+
+  // ---------- 潘多拉事件（纯函数，供测试） ----------
+  // 盒子是否处于「已生效且未到期」：apply_at 未到视为待生效，expire_at 已过视为结束
+  function pandoraActive(box, now = Date.now()) {
+    if (!box || !box.event_code) return false;
+    if (box.apply_at && new Date(box.apply_at).getTime() > now) return false;
+    if (box.expire_at && new Date(box.expire_at).getTime() <= now) return false;
+    return true;
+  }
+
+  // 从事件载荷取数值：优先服务端下发的 rolled_value，缺失时从 event_title 文案兜底解析
+  // （/api/pandora/today 的盒子字段未全量验证过，两条路径都保留）
+  function pandoraNum(pay, title, re) {
+    if (typeof pay.rolled_value === 'number') return pay.rolled_value;
+    const m = title.match(re);
+    return m ? Number(m[1]) : null;
+  }
+
+  // 解析生效中的潘多拉事件对「评论费用估算」的影响。
+  // 每个盒子只携带一个事件，因此各标志互斥；未生效返回 { active: false }
+  // - badge_drop_lock 回归起点：徽章全部掉落且锁定，无法佩戴 → 徽章逻辑完全让位
+  // - fixed_text_cost 妙笔生花：发评费用固定为 N 金币 → 徽章不参与计费
+  // - comment_min_length 多说多写：gold 档「评论不扣除金币」→ 免费发评；各档要求 ≥N 字
+  // - coin_modifier_percent 金币升降机：大部分金币变动 ±N%；
+  //   官方 COINS_MODIFIER_IMMUNE_REASONS 豁免清单不含发帖/评论扣费 → 费用估算需乘算
+  // - comment_custom_emoji_required 小表情：评论需包含自定义表情
+  function pandoraEffect(box, now = Date.now()) {
+    if (!pandoraActive(box, now)) return { active: false };
+    const pay = box.payload || box;
+    const title = String(pay.event_title || '');
+    const code = String(pay.event_code || '');
+    const constraint = box.comment_constraint || pay.comment_constraint || {};
+    return {
+      active: true,
+      code,
+      name: pay.event_name || code,
+      expireAt: box.expire_at || pay.expires_at || null,
+      lockBadge: code === 'badge_drop_lock',
+      fixedCost: code === 'fixed_text_cost' ? pandoraNum(pay, title, /固定为\s*(\d+)\s*金币/) : null,
+      freeComment: /不扣除?金币/.test(title),
+      modifierPct: code === 'coin_modifier_percent' ? pandoraNum(pay, title, /([+-]?\d+)\s*%/) : null,
+      minLength: typeof constraint.min_length === 'number'
+        ? constraint.min_length
+        : (code === 'comment_min_length' ? pandoraNum(pay, title, /(\d+)\s*个字/) : null),
+      needEmoji: code === 'comment_custom_emoji_required' || constraint.custom_emoji_required === true,
+    };
+  }
+
+  // 本地时间 MM-DD HH:mm（潘多拉截止时间展示）
+  function fmtTime(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const p = (n) => String(n).padStart(2, '0');
+    return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  // 当前佩戴的费用徽章（最多一枚），其他类型徽章不影响费用。
+  function currentCostBadge(p, eq) {
+    return [p.fixed, p.percent].find((badge) => badge && eq.has(badge.badge_id)) || null;
+  }
+
+  // 推荐更省的一枚；没有相关徽章、或候选都不比不戴省时返回 null
+  function recommend(len, p) {
+    const cands = [p.fixed, p.percent].filter(Boolean);
+    if (!cands.length) return null;
+    const best = cands.reduce((a, b) => (badgeCost(len, b) < badgeCost(len, a) ? b : a));
+    return badgeCost(len, best) < baseCost(len) ? best : null;
+  }
+
+  // 状态栏展示模型（纯函数）
+  // - warn：需要红色提醒（当前佩戴已不划算 / 潘多拉约束未满足）
+  // - target：建议切换到的徽章；unequip：建议摘下的徽章（二者互斥）
+  // - pand：可选的 pandoraEffect(box) 结果；潘多拉事件优先于徽章逻辑
+  function barModel(len, p, eq, pand) {
+    const base = baseCost(len);
+    const pe = pand && pand.active ? pand : null;
+    const m = {
+      count: `${len} 字`,
+      status: '',
+      hint: '',
+      warn: false,
+      target: null,
+      unequip: null,
+      btn: '',
+    };
+
+    // 0) 潘多拉事件接管：徽章无法佩戴 / 费用被固定或免除时，不再给任何徽章动作
+    if (pe) {
+      const until = pe.expireAt ? ` · ${fmtTime(pe.expireAt)} 截止` : '';
+      if (pe.lockBadge) {
+        m.status = `潘多拉「${pe.name}」生效中${until} · 徽章已掉落锁定`;
+        m.hint = '⚠️ 下次开盒前无法佩戴徽章，按无徽章计费';
+        m.warn = true;
+        return m;
+      }
+      if (pe.freeComment) {
+        m.status = `潘多拉「${pe.name}」生效中 · 发评 0 金币`;
+        m.hint = pe.minLength ? `✓ 生效期间评论不扣金币（需 ≥${pe.minLength} 字）` : '✓ 生效期间评论不扣金币';
+        return m;
+      }
+      if (typeof pe.fixedCost === 'number') {
+        m.status = `潘多拉「${pe.name}」生效中 · 发评固定 ${pe.fixedCost} 金币`;
+        m.hint = '潘多拉已固定费用，徽章不参与计算';
+        return m;
+      }
+    }
+
+    // 金币升降机：对发评扣费按 ±% 乘算（乘法同缩放不改变「哪枚更省」的判断，只影响展示数值）
+    const k = pe && typeof pe.modifierPct === 'number' ? 1 + pe.modifierPct / 100 : 1;
+    const scale = (n) => Math.round(n * k);
+
+    const cur = currentCostBadge(p, eq);
+    const curCost = badgeCost(len, cur);
+    m.status = `当前：${cur ? cur.badge.name : '未佩戴费用徽章'} · 发评约 ${scale(curCost)} 金币`;
+
+    const best = recommend(len, p);
+
+    // 1) 戴着的徽章比不戴还贵：建议摘下（站点存在恒定 10 金币的固定徽章，同价则不算贵）
+    if (cur && curCost > base) {
+      m.unequip = cur;
+      m.btn = `摘下「${cur.badge.name}」（省 ${scale(curCost - base)} 金币）`;
+      m.hint = `⚠️ 当前徽章比不戴贵 ${scale(curCost - base)} 金币`;
+      m.warn = true;
+      return finishPandora(m, len, pe, k);
+    }
+
+    const bestCost = best ? badgeCost(len, best) : base;
+    // 2) 没有更省的候选、已是最省、或同价（省 0 金币）：不给无意义的切换按钮
+    if (!best || (cur && (best === cur || bestCost >= curCost))) {
+      m.hint = cur ? '✓ 当前最省' : '';
+      return finishPandora(m, len, pe, k);
+    }
+
+    // 3) 有更省的一枚
+    m.target = best;
+    m.btn = `切换「${best.badge.name}」（${scale(bestCost)} 金币）`;
+    if (cur && cur === p.percent) {
+      m.warn = true;
+      m.hint = `⚠️ ${pctText(p.percent.badge.attributes.comment_cost_percent)} 不如固定 ${scale(bestCost)} 金币`;
+    } else {
+      m.hint = `可省 ${scale(curCost - bestCost)} 金币`;
+    }
+    return finishPandora(m, len, pe, k);
+  }
+
+  // 徽章分支收尾：叠加潘多拉的费用乘算说明与评论约束提示
+  function finishPandora(m, len, pe, k) {
+    if (!pe) return m;
+    const tags = [];
+    if (k !== 1) tags.push(`潘多拉金币变动 ${pe.modifierPct > 0 ? '+' : ''}${pe.modifierPct}% 已计入`);
+    if (pe.minLength && len < pe.minLength) {
+      tags.push(`潘多拉要求 ≥${pe.minLength} 字`);
+      m.warn = true;
+    }
+    if (pe.needEmoji) tags.push('潘多拉要求包含自定义表情');
+    if (tags.length) m.hint = [m.hint, tags.join(' · ')].filter(Boolean).join(' · ');
+    return m;
+  }
+
+  const BAR_HEIGHT = 28;
+  const BAR_BTN_HEIGHT = 22;
+
+  function ensureBarStyles() {
+    if (document.querySelector('#two-libra-badge-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'two-libra-badge-styles';
+    style.textContent = `
+      [data-badge-switcher] {
+        --badge-accent:var(--color-primary,#087f8c);
+        --badge-soft:var(--color-base-100,#e8f5f5);
+        --badge-border:var(--color-base-300,#d7e5e7);
+        --badge-surface:var(--color-base-200,#f6fafb);
+        --badge-ink:var(--color-base-content,#344d59);
+        --badge-danger:color-mix(in oklab,var(--color-error,#dc2626) 65%,var(--badge-ink));
+        --badge-success:color-mix(in oklab,var(--color-success,#15803d) 65%,var(--badge-ink));
+        --badge-warning:color-mix(in oklab,var(--color-warning,#b45309) 65%,var(--badge-ink));
+        --badge-activity-accent:var(--color-secondary,var(--badge-accent));
+        --badge-action-ink:color-mix(in oklab,var(--badge-accent) 40%,var(--badge-ink));
+        container-type:inline-size;
+        color:var(--badge-ink);
+        font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+      }
+      [data-badge-switcher] button {
+        color:var(--badge-ink); background:var(--badge-soft);
+        border-color:var(--badge-border);
+      }
+      [data-badge-switcher] button:hover:not(:disabled) {
+        background:var(--badge-border);
+      }
+      [data-badge-switcher] button:focus-visible {
+        outline:2px solid var(--badge-accent); outline-offset:2px;
+      }
+      [data-badge-switcher] button:disabled { cursor:wait; opacity:.55; }
+      [data-badge-switcher] .badge-count {
+        color:var(--badge-ink); font-weight:600; font-size:11px;
+        width:8ch; text-align:right;
+        font-family:ui-monospace,"SFMono-Regular",Consolas,monospace;
+      }
+      [data-badge-switcher] .badge-status { flex:1 1 auto; }
+      [data-badge-switcher] .badge-hint { max-width:26%; }
+      [data-badge-switcher] .badge-activity {
+        width:180px;
+        color:color-mix(in oklab,var(--badge-activity-accent) 40%,var(--badge-ink));
+        background:var(--badge-soft);
+        border-color:color-mix(in oklab,var(--badge-activity-accent) 30%,var(--badge-border));
+        border-style:dashed;
+      }
+      [data-badge-switcher] .badge-activity[aria-pressed="true"] {
+        background:color-mix(in oklab,var(--badge-activity-accent) 10%,var(--badge-soft));
+        border-style:solid;
+      }
+      [data-badge-switcher] .badge-activity:hover:not(:disabled) {
+        background:color-mix(in oklab,var(--badge-activity-accent) 16%,var(--badge-soft));
+      }
+      [data-badge-switcher] .badge-activity-compact { display:none; }
+      [data-badge-switcher] .badge-hint:empty { display:none; }
+      [data-badge-switcher] .badge-action {
+        width:184px; max-width:30%;
+        background:color-mix(in oklab,var(--badge-accent) 8%,var(--badge-soft));
+        color:var(--badge-action-ink);
+        border-color:color-mix(in oklab,var(--badge-accent) 20%,var(--badge-border));
+      }
+      [data-badge-switcher] .badge-action:hover:not(:disabled) {
+        background:color-mix(in oklab,var(--badge-accent) 14%,var(--badge-soft));
+      }
+      @container (max-width:620px) {
+        [data-badge-switcher] .badge-hint { display:none; }
+        [data-badge-switcher] .badge-activity { width:120px; }
+        [data-badge-switcher] .badge-activity-full { display:none; }
+        [data-badge-switcher] .badge-activity-compact { display:inline; }
+        [data-badge-switcher] button { max-width:35%; }
+      }
+    `;
+    (document.head || document.body).appendChild(style);
+  }
+
+  function barCss() {
+    return [
+      'display:flex',
+      'flex-wrap:nowrap',
+      'align-items:center',
+      'justify-content:flex-end',
+      'gap:0 6px',
+      'box-sizing:border-box',
+      `height:${BAR_HEIGHT}px`,
+      `min-height:${BAR_HEIGHT}px`,
+      `max-height:${BAR_HEIGHT}px`,
+      'overflow:hidden',
+      'font-size:11px',
+      'line-height:18px',
+      'white-space:nowrap',
+      'margin:0 0 4px',
+      'padding:2px 0',
+      'user-select:none',
+    ].join(';');
+  }
+
+  // 按钮使用稳定宽度，长文案省略，避免推荐变化时挤动其他信息。
+  function barBtnCss(extra) {
+    return [
+      'flex:0 0 auto',
+      'box-sizing:border-box',
+      `height:${BAR_BTN_HEIGHT}px`,
+      'padding:0 6px',
+      'border:1px solid',
+      'border-radius:4px',
+      'font-family:inherit',
+      'font-size:11px',
+      'font-weight:600',
+      'line-height:20px',
+      'white-space:nowrap',
+      'overflow:hidden',
+      'text-overflow:ellipsis',
+      'cursor:pointer',
+      extra || '',
+    ].join(';');
+  }
+
+  // 可变长文案：min-width:0 + 省略号，宽度不够时优先压缩它们而不是换行
+  function barTextCss(kind) {
+    return kind === 'count'
+      ? 'flex:0 0 auto;font-variant-numeric:tabular-nums;'
+      : 'flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;';
+  }
+
+  function makeBar() {
+    ensureBarStyles();
+    const bar = document.createElement('div');
+    bar.setAttribute(BAR_FLAG, '');
+    bar.style.cssText = barCss();
+
+    // 最左侧的「走个面」快捷开关：右侧自动间距让其他内容保持右对齐，
+    // 未持有该徽章时整颗按钮隐藏（不占位、不影响原有布局）
+    const activityBtn = document.createElement('button');
+    activityBtn.type = 'button';
+    activityBtn.className = 'badge-activity';
+    activityBtn.style.cssText = barBtnCss('margin-right:auto;display:none;max-width:30%');
+    for (const variant of ['full', 'compact']) {
+      const label = document.createElement('span');
+      label.className = `badge-activity-${variant}`;
+      activityBtn.appendChild(label);
+    }
+    activityBtn.addEventListener('click', toggleActivityBadge);
+    bar.__activityBtn = activityBtn;
+    bar.appendChild(activityBtn);
+
+    const countEl = document.createElement('span');
+    const statusEl = document.createElement('span');
+    const hintEl = document.createElement('span');
+    countEl.className = 'badge-count';
+    statusEl.className = 'badge-status';
+    hintEl.className = 'badge-hint';
+    countEl.style.cssText = barTextCss('count');
+    statusEl.style.cssText = barTextCss('text');
+    hintEl.style.cssText = barTextCss('text');
+    bar.__countEl = countEl;
+    bar.__statusEl = statusEl;
+    bar.__hintEl = hintEl;
+    bar.appendChild(countEl);
+    bar.appendChild(statusEl);
+    bar.appendChild(hintEl);
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'badge-action';
+    btn.style.cssText = barBtnCss('');
+    btn.addEventListener('click', () => {
+      const act = bar.__action;
+      if (!act) return;
+      if (act.type === 'switch') switchTo(act.badge);
+      else unequip(act.badge);
+    });
+    bar.__actionBtn = btn;
+    bar.appendChild(btn);
+    return bar;
+  }
+
+  function setText(el, text) {
+    if (el.textContent !== text) el.textContent = text;
+  }
+
+  // 只在值真正变化时写样式，避免无谓的样式重算
+  function setStyle(el, prop, value) {
+    if (el.style[prop] !== value) el.style[prop] = value;
+  }
+
+  // 只在文案/显隐真正变化时写 DOM，避免状态栏自身改动触发观察器循环
+  function updateBar(editor, bar) {
+    if (!bar) return;
+    const pe = pandoraEffect(pandoraBox);
+    const model = barModel(editorText(editor).length, pair, equipped, pe);
+    const countEl = bar.__countEl;
+    const statusEl = bar.__statusEl;
+    const hintEl = bar.__hintEl;
+    const btnEl = bar.__actionBtn;
+    setText(countEl, model.count);
+    setStyle(countEl, 'color', model.warn ? 'var(--badge-danger)' : '');
+    setStyle(countEl, 'fontWeight', model.warn ? '600' : '');
+    setText(statusEl, model.status);
+    statusEl.title = [model.status, model.hint].filter(Boolean).join(' · ');
+    const canAct = !!(model.target || model.unequip);
+    // 单行省略后长文案可能被截断，把完整内容放进 title，鼠标悬停仍能看到
+    const hintText = model.hint + (canAct ? ' · Alt+B 切换' : '');
+    setText(hintEl, hintText);
+    hintEl.title = hintText;
+    setStyle(hintEl, 'color', model.warn
+      ? 'var(--badge-danger)'
+      : model.hint.startsWith('✓') ? 'var(--badge-success)' : model.hint ? 'var(--badge-warning)' : '');
+    setStyle(hintEl, 'fontWeight', model.warn ? '600' : '');
+
+    // 「走个面」入口：与字数、费用模型无关，只看是否持有/佩戴
+    const activityBtn = bar.__activityBtn;
+    if (activityBadge) {
+      const worn = equipped.has(activityBadge.badge_id);
+      const gain = activityGain(activityBadge);
+      const locked = !!(pe.active && pe.lockBadge);
+      const lockLabel = `潘多拉锁定中${pe.expireAt ? ` · 至 ${fmtTime(pe.expireAt)}` : ''}`;
+      const fullLabel = activityPending || (locked ? lockLabel : activityLabel(activityBadge, worn));
+      const compactLabel = activityPending || (locked ? lockLabel : activityLabel(activityBadge, worn, true));
+      setText(activityBtn.children[0], fullLabel);
+      setText(activityBtn.children[1], compactLabel);
+      activityBtn.setAttribute('aria-busy', String(!!activityPending));
+      activityBtn.setAttribute('aria-disabled', String(locked || busy));
+      setStyle(activityBtn, 'display', '');
+      activityBtn.setAttribute('aria-pressed', String(worn));
+      setStyle(activityBtn, 'fontWeight', worn ? '600' : '');
+      setStyle(activityBtn, 'opacity', locked ? '.5' : '');
+      activityBtn.disabled = locked || busy;
+      activityBtn.title = locked
+        ? `潘多拉「${pe.name}」锁定中${pe.expireAt ? `，至 ${fmtTime(pe.expireAt)}` : '，下次开盒前无法佩戴徽章'}`
+        : `${worn ? '摘下' : '佩戴'}「${activityName(activityBadge)}」${gain == null ? '' : `，活跃度 +${gain}%`}（点击${worn ? '摘下' : '佩戴'}）`;
+      activityBtn.setAttribute('aria-label', `${fullLabel}，${activityBtn.title}`);
+    } else {
+      setStyle(activityBtn, 'display', 'none');
+    }
+
+    if (busy && !activityPending) {
+      setText(btnEl, '处理中…');
+      setStyle(btnEl, 'display', '');
+      btnEl.disabled = true;
+    } else if (canAct) {
+      setText(btnEl, model.btn);
+      btnEl.title = model.btn;
+      setStyle(btnEl, 'display', '');
+      btnEl.disabled = busy;
+      bar.__action = model.target
+        ? { type: 'switch', badge: model.target }
+        : { type: 'unequip', badge: model.unequip };
+    } else {
+      setStyle(btnEl, 'display', 'none');
+      bar.__action = null;
+    }
+  }
+
+
+// 演示不访问网络；每个评论框独立保存状态。
+const records=[];let activeRecord=null;
+function pandoraEffect(box){return box||{active:false}}
+function fmtTime(iso){return new Date(iso).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})}
+function editorText(editor){return editor.querySelector('textarea').value}
+function toast(message,isErr=false){const el=document.createElement('div');el.role='status';el.textContent=message;Object.assign(el.style,{position:'fixed',bottom:'22px',left:'50%',transform:'translateX(-50%)',padding:'10px 18px',borderRadius:'8px',background:isErr?'var(--color-error)':'var(--color-primary)',color:'var(--color-primary-content)',zIndex:10000,maxWidth:'90vw'});(document.querySelector('dialog[open]')||document.body).append(el);setTimeout(()=>el.remove(),2600)}
+function load(r){pair=r.pair;equipped=r.eq;activityBadge=r.activity;pandoraBox=r.event;busy=r.busy;activityPending=r.pending}
+function paint(r){load(r);updateBar(r.editor,r.bar);if(r.summary){const m=barModel(r.input.value.length,r.pair,r.eq,r.event);r.summary.textContent=[m.status,m.hint,m.btn].filter(Boolean).join(' · ')}}
+function makeRecord(host,opts={}){const r={pair:{fixed:F,percent:P},eq:new Set(['p']),activity:A,event:eventEffect('none'),busy:false,pending:'',...opts};if(r.event.lockBadge)r.eq.clear();load(r);r.bar=makeBar();r.editor=document.createElement('div');r.editor.className='editor';r.editor.innerHTML='<div class="editor-tools">B　I　↗　❞　≡　▧　☺　 · Markdown</div><textarea aria-label="评论内容" placeholder="写下评论，实时查看字数与费用…"></textarea><div class="editor-footer"><span>支持 Markdown</span><span>评论预览</span></div>';r.input=r.editor.querySelector('textarea');r.input.value='字'.repeat(opts.len??36);host.append(r.bar,r.editor);host.addEventListener('click',()=>{activeRecord=r},true);r.input.addEventListener('focus',()=>{activeRecord=r});r.input.addEventListener('input',()=>paint(r));records.push(r);paint(r);return r}
+function toggleActivityBadge(){const r=activeRecord;if(!r||r.busy||!r.activity)return;if(r.event.lockBadge){toast('潘多拉锁定中，截止 '+fmtTime(r.event.expireAt),true);return}const removing=r.eq.has('a');operate(r,removing?'摘下中…':'佩戴中…',()=>{removing?r.eq.delete('a'):r.eq=new Set(['a'])},removing?'已摘下「走个面」':'已佩戴「走个面」，活跃度 +20%')}
+function switchTo(target){const r=activeRecord;if(!r||r.event.lockBadge)return;operate(r,'',()=>{r.eq=new Set([target.badge_id])},'已切换为「'+target.badge.name+'」')}
+function unequip(target){const r=activeRecord;if(!r||r.event.lockBadge)return;operate(r,'',()=>r.eq.delete(target.badge_id),'已摘下「'+target.badge.name+'」')}
+function operate(r,pending,action,message){if(r.busy)return;r.busy=true;r.pending=pending;paint(r);setTimeout(()=>{if(document.querySelector('#failure').checked)toast('操作失败：模拟网络异常，请重试',true);else{action();toast(message)}r.busy=false;r.pending='';paint(r)},1000)}
+const live=makeRecord(document.querySelector('#live'));activeRecord=live;
+const eventSelect=document.querySelector('#event');for(const [key,[name]]of Object.entries(events)){const o=document.createElement('option');o.value=key;o.textContent=name;eventSelect.append(o)}
+document.querySelector('#wear').onchange=e=>{if(live.busy)return;if(live.event.lockBadge){e.target.value='none';return}live.eq=new Set(e.target.value==='none'?[]:[e.target.value]);paint(live)};
+eventSelect.onchange=e=>{live.event=eventEffect(e.target.value);if(live.event.lockBadge){live.eq.clear();document.querySelector('#wear').value='none'}paint(live)};
+document.querySelector('#width').onchange=e=>document.querySelector('#live').style.width=e.target.value;
+for(const btn of document.querySelectorAll('[data-length]'))btn.onclick=()=>{live.input.value='字'.repeat(Number(btn.dataset.length));paint(live)};
+document.querySelector('#theme').onclick=e=>{const dark=document.documentElement.classList.toggle('dark');e.target.textContent=dark?'切换浅色':'切换深色'};
+document.querySelector('#reset').onclick=()=>{if(live.busy)return;live.eq=new Set(['p']);live.event=eventEffect('none');live.input.value='字'.repeat(36);document.querySelector('#wear').value='p';eventSelect.value='none';document.querySelector('#failure').checked=false;paint(live)};
+const cases=[
+['走个面 · 未佩戴','明确佩戴动作；点击后立即显示进度。',{}],
+['走个面 · 已佩戴','勾选与浅色底；悬停提示点击摘下。',{eq:new Set(['a'])}],
+['走个面 · 佩戴中','请求期间按钮禁用，防止重复点击。',{busy:true,pending:'佩戴中…'}],
+['走个面 · 摘下中','摘下与佩戴拥有独立的进度文案。',{eq:new Set(['a']),busy:true,pending:'摘下中…'}],
+['未持有走个面','不显示活动按钮。',{activity:null}],
+['短评论 · 推荐比例减免','10 → 7 金币，比固定 8 金币更省。',{eq:new Set(['f'])}],
+['长评论 · 推荐固定费用','101 字起，固定 8 金币胜过 30% 减免。',{len:101}],
+['当前最省 · 固定费用','长评论佩戴固定费用徽章，无需切换。',{len:1001,eq:new Set(['f'])}],
+['没有费用徽章','退化为字数与基础阶梯费用。',{pair:{fixed:null,percent:null},eq:new Set(),activity:null,len:101}],
+['只有一枚费用徽章','仍能推荐比不佩戴更省的候选。',{pair:{fixed:F,percent:null},eq:new Set()}],
+['佩戴后反而更贵','费用高于基础阶梯时建议摘下。',{pair:{fixed:badge('costly','高费用徽章',{comment_cost:20}),percent:null},eq:new Set(['costly'])}],
+['相同费用','同价不展示无意义的切换按钮。',{pair:{fixed:badge('equal','固定 7 金币',{comment_cost:7}),percent:P},eq:new Set(['equal'])}],
+...Object.keys(events).filter(k=>k!=='none').map(k=>['潘多拉 · '+events[k][0],'事件优先级及评论约束提示。',{event:eventEffect(k),len:36}]),
+...[100,101,1000,1001,2000,2001,5000,5001].map(n=>['基础费用 · '+n+' 字','无费用徽章时的字数阶梯边界。',{len:n,pair:{fixed:null,percent:null},eq:new Set(),activity:null}]),
+['320 px · 短文案','模拟窄屏，隐藏次要提示并保留状态悬停全文。',{width:'320px'}],
+['375 px · 已佩戴','短文案仍保留勾选与浅色底状态。',{width:'375px',eq:new Set(['a'])}],
+['窄屏 · 潘多拉锁定','按钮显示锁定原因与截止时间，全文可悬停查看。',{width:'375px',event:eventEffect('lock')}],
+['长徽章名称','固定按钮宽度与省略号，避免文案推动布局。',{activity:badge('a','走个面 · 超长名称展示与省略测试',{daily_active_gain_percent:.2})}]
+];
+for(const [title,description,opts]of cases){const card=document.createElement('article');card.className='sample';const h=document.createElement('h3');h.textContent=title;const p=document.createElement('p');p.textContent=description;const body=document.createElement('div');body.className='sample-body';if(opts.width)body.style.width=opts.width;const summary=document.createElement('p');summary.className='summary';card.append(h,p,body,summary);document.querySelector('#samples').append(card);makeRecord(body,{...opts,summary})}
+document.querySelector('#sample-count').textContent=cases.length+' 个独立样本';
+const modal=makeRecord(document.querySelector('#dialog-editor'),{len:101});const dialog=document.querySelector('#post-dialog');document.querySelector('#open-dialog').onclick=()=>{dialog.showModal();activeRecord=modal};document.querySelector('#close-dialog').onclick=()=>dialog.close();
+document.addEventListener('keydown',e=>{if(!e.altKey||e.key.toLowerCase()!=='b')return;e.preventDefault();const r=activeRecord;if(!r||r.busy)return;const m=barModel(r.input.value.length,r.pair,r.eq,r.event);if(m.target)switchTo(m.target);else if(m.unequip)unequip(m.unequip);else toast(r.event.lockBadge?'潘多拉锁定中':'当前无需切换')});
+</script></html>

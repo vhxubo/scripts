@@ -256,15 +256,6 @@ const mEq = T.barModel(50, { fixed: F10, percent: null }, new Set([F10.badge_id]
 eq(mEq.unequip, null, '同价徽章不建议摘下');
 eq(mEq.hint, '✓ 当前最省', '同价徽章视为最省');
 
-// ---- 两枚费用徽章同时佩戴：明确提示估算不准并给出摘下动作 ----
-const mDual = T.barModel(150, PAIR, new Set([FIXED.badge_id, PERCENT.badge_id]));
-eq(mDual.warn, true, '两枚同戴告警');
-eq(mDual.unequip && mDual.unequip.badge_id, PERCENT.badge_id, '两枚同戴摘下当次不划算的那枚');
-eq(mDual.target, null, '两枚同戴不给切换目标');
-eq(mDual.status.includes('同戴'), true, '状态栏标注两枚同戴');
-const mDualShort = T.barModel(50, PAIR, new Set([FIXED.badge_id, PERCENT.badge_id]));
-eq(mDualShort.unequip && mDualShort.unequip.badge_id, FIXED.badge_id, '短文本时摘下固定徽章');
-
 // ---- 无徽章用户：官方分段税全档文案（超 100/1000/2000/5000 → 30/60/120/200） ----
 const NO_BADGE = { fixed: null, percent: null };
 for (const [len, cost] of [[60, 10], [100, 10], [101, 30], [1000, 30], [1001, 60], [2001, 120], [5001, 200]]) {
@@ -596,3 +587,6 @@ document.querySelectorAll = originalQuery;
   console.log(`\n${passed} 通过, ${failed} 失败`);
   process.exit(failed ? 1 : 0);
 })().catch((error) => { console.error(error); process.exit(1); });
+
+// 未佩戴且只持有固定费用徽章时，正常给出推荐。
+eq(T.barModel(36, {fixed: FIXED, percent: null}, new Set()).target.badge_id, FIXED.badge_id, '单固定费用徽章且未佩戴时不崩溃');

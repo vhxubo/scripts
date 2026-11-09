@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         2libra 评论金币徽章助手
 // @namespace    https://vhxubo.local/2libra-badge-switcher
-// @version      1.6.4
-// @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵或两枚同戴时改为摘下）；持有「走个面」徽章时在状态栏最左侧提供活跃度 +20% 的一键佩戴/摘下入口（与评论字数、金币费用无关，不参与费用推荐）；每日潘多拉事件优先于徽章逻辑：回归起点锁定徽章时不再给切换按钮、妙笔生花固定费用/多说多写免评论费时徽章退出计费、金币升降机按 ±% 乘算费用、多说多写/小表情给出约束提示；文案与告警阈值由徽章属性与事件文案现算；帖子弹窗（列表页点击帖子时用原生 dialog 渲染）里的评论框同样注入，且状态栏采用定高响应式工具条、长文案省略显示，弹窗动画与打字都不会把正文顶得上下跳动；切换通过 /api/badges/equip 完成，切换前自动检查是否收费；内置自动更新：@updateURL/@downloadURL 指向 GitHub raw，由油猴管理器自动检查并升级（raw 仅缓存约 5 分钟，GitHub Actions 校验版本号递增）。
+// @version      1.6.5
+// @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵时改为摘下）；持有「走个面」徽章时在状态栏最左侧提供活跃度 +20% 的一键佩戴/摘下入口（与评论字数、金币费用无关，不参与费用推荐）；每日潘多拉事件优先于徽章逻辑：回归起点锁定徽章时不再给切换按钮、妙笔生花固定费用/多说多写免评论费时徽章退出计费、金币升降机按 ±% 乘算费用、多说多写/小表情给出约束提示；文案与告警阈值由徽章属性与事件文案现算；帖子弹窗（列表页点击帖子时用原生 dialog 渲染）里的评论框同样注入，且状态栏采用定高响应式工具条、长文案省略显示，弹窗动画与打字都不会把正文顶得上下跳动；切换通过 /api/badges/equip 完成，切换前自动检查是否收费；内置自动更新：@updateURL/@downloadURL 指向 GitHub raw，由油猴管理器自动检查并升级（raw 仅缓存约 5 分钟，GitHub Actions 校验版本号递增）。
 // @author       vhxubo
 // @match        https://2libra.com/*
 // @run-at       document-idle
@@ -205,14 +205,9 @@
     return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   }
 
-  // 当前佩戴的费用徽章（可能 0 / 1 / 2 枚；两枚同戴时费用存在叠加歧义）
-  function wornCostBadges(p, eq) {
-    return [p.fixed, p.percent].filter((b) => b && eq.has(b.badge_id));
-  }
-
-  // 当前佩戴的两类徽章之一（都没有则 null）
+  // 当前佩戴的费用徽章（最多一枚），其他类型徽章不影响费用。
   function currentCostBadge(p, eq) {
-    return wornCostBadges(p, eq)[0] || null;
+    return [p.fixed, p.percent].find((badge) => badge && eq.has(badge.badge_id)) || null;
   }
 
   // 推荐更省的一枚；没有相关徽章、或候选都不比不戴省时返回 null
@@ -224,7 +219,7 @@
   }
 
   // 状态栏展示模型（纯函数）
-  // - warn：需要红色提醒（当前佩戴已不划算 / 两枚同戴 / 潘多拉约束未满足）
+  // - warn：需要红色提醒（当前佩戴已不划算 / 潘多拉约束未满足）
   // - target：建议切换到的徽章；unequip：建议摘下的徽章（二者互斥）
   // - pand：可选的 pandoraEffect(box) 结果；潘多拉事件优先于徽章逻辑
   function barModel(len, p, eq, pand) {
@@ -265,28 +260,13 @@
     const k = pe && typeof pe.modifierPct === 'number' ? 1 + pe.modifierPct / 100 : 1;
     const scale = (n) => Math.round(n * k);
 
-    const worn = wornCostBadges(p, eq);
-    const cur = worn[0] || null;
+    const cur = currentCostBadge(p, eq);
     const curCost = badgeCost(len, cur);
-    m.status = worn.length > 1
-      // 站点如何处理两枚费用徽章未知，明确提示估算可能不准
-      ? `当前：${worn.map((b) => b.badge.name).join(' + ')} · 发评约 ${scale(curCost)} 金币（同戴，估算可能不准）`
-      : `当前：${cur ? cur.badge.name : '未佩戴费用徽章'} · 发评约 ${scale(curCost)} 金币`;
+    m.status = `当前：${cur ? cur.badge.name : '未佩戴费用徽章'} · 发评约 ${scale(curCost)} 金币`;
 
     const best = recommend(len, p);
 
-    // 1) 两枚费用徽章同时佩戴：先摘掉不划算的那枚，否则费用估算不可信
-    if (worn.length > 1) {
-      const keep = best || worn.reduce((a, b) => (badgeCost(len, b) <= badgeCost(len, a) ? b : a));
-      const drop = worn.find((b) => b !== keep) || worn[worn.length - 1];
-      m.unequip = drop;
-      m.btn = `摘下「${drop.badge.name}」（两枚同戴费用存疑）`;
-      m.hint = '⚠️ 两枚费用徽章同时佩戴，估算可能不准';
-      m.warn = true;
-      return finishPandora(m, len, pe, k);
-    }
-
-    // 2) 戴着的徽章比不戴还贵：建议摘下（站点存在恒定 10 金币的固定徽章，同价则不算贵）
+    // 1) 戴着的徽章比不戴还贵：建议摘下（站点存在恒定 10 金币的固定徽章，同价则不算贵）
     if (cur && curCost > base) {
       m.unequip = cur;
       m.btn = `摘下「${cur.badge.name}」（省 ${scale(curCost - base)} 金币）`;
@@ -296,16 +276,16 @@
     }
 
     const bestCost = best ? badgeCost(len, best) : base;
-    // 3) 没有更省的候选、已是最省、或同价（省 0 金币）：不给无意义的切换按钮
+    // 2) 没有更省的候选、已是最省、或同价（省 0 金币）：不给无意义的切换按钮
     if (!best || (cur && (best === cur || bestCost >= curCost))) {
       m.hint = cur ? '✓ 当前最省' : '';
       return finishPandora(m, len, pe, k);
     }
 
-    // 4) 有更省的一枚
+    // 3) 有更省的一枚
     m.target = best;
     m.btn = `切换「${best.badge.name}」（${scale(bestCost)} 金币）`;
-    if (cur === p.percent) {
+    if (cur && cur === p.percent) {
       m.warn = true;
       m.hint = `⚠️ ${pctText(p.percent.badge.attributes.comment_cost_percent)} 不如固定 ${scale(bestCost)} 金币`;
     } else {
@@ -472,14 +452,32 @@
       const ok = window.confirm(`本次切换徽章需消耗 ${amount} 金币，是否继续？`);
       if (!ok) return false;
     }
+    // 在真正操作前重新确认事件；锁定由站点负责移除徽章，助手不再发佩戴请求。
+    await refreshPandora(true);
+    const pe = pandoraEffect(pandoraBox);
+    if (pe.active && pe.lockBadge) {
+      throw new Error(`潘多拉「${pe.name}」生效中，无法佩戴徽章`);
+    }
+    await refreshEquipped(true);
+    if (equipped.size === 1 && equipped.has(target.badge_id)) return true;
+    // 先摘后戴；摘下失败就停止，避免尝试同时佩戴。
+    for (const id of equipped) {
+      if (id === target.badge_id) continue;
+      await apiJson('/api/badges/equip', {
+        method: 'POST',
+        body: JSON.stringify({ badge_id: id, equip: false }),
+      });
+      equipped.delete(id);
+    }
     await apiJson('/api/badges/equip', {
       method: 'POST',
       body: JSON.stringify({ badge_id: target.badge_id, equip: true }),
     });
+    equipped = new Set([target.badge_id]);
     return true;
   }
 
-  // 切换费用徽章：佩戴目标并尝试摘下另一枚（站点允许并存，避免叠加歧义）
+  // 切换费用徽章：统一通过单徽章佩戴入口替换当前徽章。
   async function switchTo(target) {
     if (busy || !target) return;
     // 防御：回归起点生效期间佩戴请求必然失败，直接拦截（状态栏正常时不会走到这里）
@@ -493,24 +491,7 @@
     requestRender();
     try {
       if (!(await equipBadge(target))) return;
-      equipped.add(target.badge_id);
-
-      // 摘下另一枚费用徽章：失败必须让用户知道，否则两枚同戴会悄悄改变费用估算
-      const other = target === pair.fixed ? pair.percent : pair.fixed;
-      if (other && equipped.has(other.badge_id)) {
-        try {
-          await apiJson('/api/badges/equip', {
-            method: 'POST',
-            body: JSON.stringify({ badge_id: other.badge_id, equip: false }),
-          });
-          equipped.delete(other.badge_id);
-          toast(`已切换为「${target.badge.name}」`);
-        } catch (e) {
-          toast(`已佩戴「${target.badge.name}」，但摘下「${other.badge.name}」失败：${errText(e)}`, true);
-        }
-      } else {
-        toast(`已切换为「${target.badge.name}」`);
-      }
+      toast(`已切换为「${target.badge.name}」`);
     } catch (e) {
       toast(`切换失败：${errText(e)}`, true);
     } finally {
@@ -520,7 +501,7 @@
   }
 
   // 「走个面」快捷开关：只看徽章是否佩戴，与评论字数/费用推荐完全无关。
-  // 只切换这一枚，不动费用徽章（站点允许同时佩戴多枚）。
+  // 佩戴时同样会替换当前徽章，最多只能佩戴一枚。
   async function toggleActivityBadge() {
     if (busy || !activityBadge) return;
     const pe = pandoraEffect(pandoraBox);
@@ -559,7 +540,7 @@
     }
   }
 
-  // 摘下徽章：当前佩戴比不戴更贵、或两枚同戴时由状态栏 / Alt+B 触发
+  // 摘下徽章：当前佩戴比不戴更贵时由状态栏 / Alt+B 触发
   async function unequip(badge) {
     if (busy || !badge) return;
     busy = true;
@@ -629,7 +610,8 @@
         --badge-danger:color-mix(in oklab,var(--color-error,#dc2626) 65%,var(--badge-ink));
         --badge-success:color-mix(in oklab,var(--color-success,#15803d) 65%,var(--badge-ink));
         --badge-warning:color-mix(in oklab,var(--color-warning,#b45309) 65%,var(--badge-ink));
-        --badge-action-ink:var(--color-primary-content,#fff);
+        --badge-activity-accent:var(--color-secondary,var(--badge-accent));
+        --badge-action-ink:color-mix(in oklab,var(--badge-accent) 40%,var(--badge-ink));
         container-type:inline-size;
         color:var(--badge-ink);
         font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
@@ -652,17 +634,31 @@
       }
       [data-badge-switcher] .badge-status { flex:1 1 auto; }
       [data-badge-switcher] .badge-hint { max-width:26%; }
-      [data-badge-switcher] .badge-activity { width:180px; }
-      [data-badge-switcher] .badge-activity-compact { display:none; }
-      [data-badge-switcher] .badge-activity-separator {
-        flex:0 0 1px; height:14px; background:var(--badge-border);
+      [data-badge-switcher] .badge-activity {
+        width:180px;
+        color:color-mix(in oklab,var(--badge-activity-accent) 40%,var(--badge-ink));
+        background:var(--badge-soft);
+        border-color:color-mix(in oklab,var(--badge-activity-accent) 30%,var(--badge-border));
+        border-style:dashed;
       }
+      [data-badge-switcher] .badge-activity[aria-pressed="true"] {
+        background:color-mix(in oklab,var(--badge-activity-accent) 10%,var(--badge-soft));
+        border-style:solid;
+      }
+      [data-badge-switcher] .badge-activity:hover:not(:disabled) {
+        background:color-mix(in oklab,var(--badge-activity-accent) 16%,var(--badge-soft));
+      }
+      [data-badge-switcher] .badge-activity-compact { display:none; }
       [data-badge-switcher] .badge-hint:empty { display:none; }
       [data-badge-switcher] .badge-action {
         width:184px; max-width:30%;
-        background:var(--badge-soft); color:var(--badge-ink); border-color:var(--badge-border);
+        background:color-mix(in oklab,var(--badge-accent) 8%,var(--badge-soft));
+        color:var(--badge-action-ink);
+        border-color:color-mix(in oklab,var(--badge-accent) 20%,var(--badge-border));
       }
-      [data-badge-switcher] .badge-action:hover:not(:disabled) { background:var(--badge-border); }
+      [data-badge-switcher] .badge-action:hover:not(:disabled) {
+        background:color-mix(in oklab,var(--badge-accent) 14%,var(--badge-soft));
+      }
       @container (max-width:620px) {
         [data-badge-switcher] .badge-hint { display:none; }
         [data-badge-switcher] .badge-activity { width:120px; }
@@ -729,7 +725,7 @@
     bar.setAttribute(BAR_FLAG, '');
     bar.style.cssText = barCss();
 
-    // 最左侧的「走个面」快捷开关：margin-right:auto 让其余右对齐内容留在右边，
+    // 最左侧的「走个面」快捷开关：右侧自动间距让其他内容保持右对齐，
     // 未持有该徽章时整颗按钮隐藏（不占位、不影响原有布局）
     const activityBtn = document.createElement('button');
     activityBtn.type = 'button';
@@ -743,12 +739,6 @@
     activityBtn.addEventListener('click', toggleActivityBadge);
     bar.__activityBtn = activityBtn;
     bar.appendChild(activityBtn);
-    const separator = document.createElement('span');
-    separator.className = 'badge-activity-separator';
-    separator.setAttribute('aria-hidden', 'true');
-    separator.style.display = 'none';
-    bar.__activitySeparator = separator;
-    bar.appendChild(separator);
 
     const countEl = document.createElement('span');
     const statusEl = document.createElement('span');
@@ -853,22 +843,19 @@
       const compactLabel = activityPending || (locked ? lockLabel : activityLabel(activityBadge, worn, true));
       setText(activityBtn.children[0], fullLabel);
       setText(activityBtn.children[1], compactLabel);
-      setStyle(bar.__activitySeparator, 'display', '');
       activityBtn.setAttribute('aria-busy', String(!!activityPending));
       activityBtn.setAttribute('aria-disabled', String(locked || busy));
       setStyle(activityBtn, 'display', '');
-      setStyle(activityBtn, 'color', worn ? 'var(--badge-success)' : '');
       activityBtn.setAttribute('aria-pressed', String(worn));
       setStyle(activityBtn, 'fontWeight', worn ? '600' : '');
       setStyle(activityBtn, 'opacity', locked ? '.5' : '');
-      activityBtn.disabled = busy;
+      activityBtn.disabled = locked || busy;
       activityBtn.title = locked
         ? `潘多拉「${pe.name}」锁定中${pe.expireAt ? `，至 ${fmtTime(pe.expireAt)}` : '，下次开盒前无法佩戴徽章'}`
         : `${worn ? '摘下' : '佩戴'}「${activityName(activityBadge)}」${gain == null ? '' : `，活跃度 +${gain}%`}（点击${worn ? '摘下' : '佩戴'}）`;
       activityBtn.setAttribute('aria-label', `${fullLabel}，${activityBtn.title}`);
     } else {
       setStyle(activityBtn, 'display', 'none');
-      setStyle(bar.__activitySeparator, 'display', 'none');
     }
 
     if (busy && !activityPending) {
@@ -970,7 +957,7 @@
 
   // ---------- 快捷键 ----------
   // Alt+B：切到当前字数下更省的那一枚；已是最省则不动；
-  // 戴着的徽章已经不比不戴便宜时改为摘下；两枚同戴时先摘掉多余的那枚。
+  // 戴着的徽章已经不比不戴便宜时改为摘下。
   // 潘多拉事件接管时（徽章锁定 / 费用被固定或免除）不再切徽章。
   function onHotkey(e) {
     if (!enabled) return;
@@ -987,17 +974,11 @@
       return;
     }
     const len = activeLength();
-    const worn = wornCostBadges(pair, equipped);
+    const cur = currentCostBadge(pair, equipped);
     const best = recommend(len, pair);
 
-    if (worn.length > 1) {
-      const keep = best || worn.reduce((a, b) => (badgeCost(len, b) <= badgeCost(len, a) ? b : a));
-      const drop = worn.find((b) => b !== keep) || worn[worn.length - 1];
-      unequip(drop);
-      return;
-    }
-    if (worn.length === 1) {
-      if (best === worn[0]) {
+    if (cur) {
+      if (best === cur) {
         toast('当前已是最省的徽章，无需切换');
         return;
       }
@@ -1006,8 +987,8 @@
         return;
       }
       // 没有更省的候选：只有「戴着反而更贵」才值得摘，同价摘了也没收益
-      if (badgeCost(len, worn[0]) > baseCost(len)) {
-        unequip(worn[0]);
+      if (badgeCost(len, cur) > baseCost(len)) {
+        unequip(cur);
         return;
       }
       toast('当前已是最省的徽章，无需切换');
