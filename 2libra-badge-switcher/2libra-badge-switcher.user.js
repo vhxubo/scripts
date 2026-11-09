@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         2libra 评论金币徽章助手
 // @namespace    https://vhxubo.local/2libra-badge-switcher
-// @version      1.5.1
-// @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵或两枚同戴时改为摘下）；持有「走个面」徽章时在状态栏最左侧提供活跃度 +20% 的一键佩戴/摘下入口（与评论字数、金币费用无关，不参与费用推荐）；每日潘多拉事件优先于徽章逻辑：回归起点锁定徽章时不再给切换按钮、妙笔生花固定费用/多说多写免评论费时徽章退出计费、金币升降机按 ±% 乘算费用、多说多写/小表情给出约束提示；文案与告警阈值由徽章属性与事件文案现算；帖子弹窗（列表页点击帖子时用原生 dialog 渲染）里的评论框同样注入；切换通过 /api/badges/equip 完成，切换前自动检查是否收费；内置自动更新：@updateURL/@downloadURL 指向 GitHub raw，由油猴管理器自动检查并升级（raw 仅缓存约 5 分钟，GitHub Actions 校验版本号递增）。
+// @version      1.5.2
+// @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵或两枚同戴时改为摘下）；持有「走个面」徽章时在状态栏最左侧提供活跃度 +20% 的一键佩戴/摘下入口（与评论字数、金币费用无关，不参与费用推荐）；每日潘多拉事件优先于徽章逻辑：回归起点锁定徽章时不再给切换按钮、妙笔生花固定费用/多说多写免评论费时徽章退出计费、金币升降机按 ±% 乘算费用、多说多写/小表情给出约束提示；文案与告警阈值由徽章属性与事件文案现算；帖子弹窗（列表页点击帖子时用原生 dialog 渲染）里的评论框同样注入，且状态栏固定 20px 单行高度、文案变长只省略不换行，弹窗动画与打字都不会把正文顶得上下跳动；切换通过 /api/badges/equip 完成，切换前自动检查是否收费；内置自动更新：@updateURL/@downloadURL 指向 GitHub raw，由油猴管理器自动检查并升级（raw 仅缓存约 5 分钟，GitHub Actions 校验版本号递增）。
 // @author       vhxubo
 // @match        https://2libra.com/*
 // @run-at       document-idle
@@ -565,17 +565,25 @@
   const INPUT_SELECTOR = '.w-md-editor-text-input, .w-md-editor-text textarea, textarea';
   // 原生 <dialog>（daisyUI 的 modal 也基于它），以及老式的 .modal.modal-open 容器
   const DIALOG_SELECTOR = 'dialog[open], .modal.modal-open, [role="dialog"]';
+  // 不看开合状态的容器选择器：关掉的弹窗里编辑器仍然在 DOM 里
+  const DIALOG_ANY_SELECTOR = 'dialog, .modal, [role="dialog"]';
 
   function openDialogOf(el) {
     return el && typeof el.closest === 'function' ? el.closest(DIALOG_SELECTOR) : null;
   }
 
-  // 编辑器是否处在「帖子评论」语境：详情页整页，或列表页上弹出的帖子弹窗
+  // 编辑器所在的弹窗，不要求当前是打开状态
+  function dialogOf(el) {
+    return el && typeof el.closest === 'function' ? el.closest(DIALOG_ANY_SELECTOR) : null;
+  }
+
+  // 编辑器是否处在「帖子评论」语境：详情页整页，或列表页上弹出的帖子弹窗。
+  // 只要编辑器在弹窗里就按弹窗身份判断（编辑帖子、追加附言、搜索等弹窗永远排除），
+  // 弹窗已关闭也仍算「评论语境」——这样关掉再打开时状态栏还在原地，不必重新插入。
   function inCommentContext(editor) {
-    if (isPostDetail(window.location.pathname)) return true;
-    const dlg = openDialogOf(editor);
-    if (!dlg) return false;
-    return dialogAllowsBar(dlg.id, dlg.className);
+    const dlg = dialogOf(editor);
+    if (dlg) return dialogAllowsBar(dlg.id, dlg.className);
+    return isPostDetail(window.location.pathname);
   }
 
   function editorText(editor) {
@@ -583,37 +591,73 @@
     return ta && ta.value ? ta.value : '';
   }
 
-  function makeBar() {
-    const bar = document.createElement('div');
-    bar.setAttribute(BAR_FLAG, '');
-    bar.style.cssText = [
+  // 状态栏固定高度的单行布局：
+  // 字数、费用、告警、按钮文案每敲一个字都可能变长变短。以前是 flex-wrap:wrap，
+  // 文案变长就会折成两行（18px → 41px），把下面的编辑器和弹窗里的正文整体顶下去；
+  // 文案变短又弹回来，看起来就是「文字跳动」——在 88vh 的帖子弹窗里尤其明显。
+  // 这里改成 nowrap + 常量高度 + 溢出省略：状态栏自身高度永远不变，文字再长也只做省略。
+  const BAR_HEIGHT = 20;
+  const BAR_BTN_HEIGHT = 16;
+
+  function barCss() {
+    return [
       'display:flex',
-      'flex-wrap:wrap',
-      'gap:2px 10px',
+      'flex-wrap:nowrap',
       'align-items:center',
       'justify-content:flex-end',
+      'gap:0 8px',
+      'box-sizing:border-box',
+      `height:${BAR_HEIGHT}px`,
+      `min-height:${BAR_HEIGHT}px`,
+      `max-height:${BAR_HEIGHT}px`,
+      'overflow:hidden',
       'font-size:11px',
-      'line-height:1.5',
+      'line-height:16px',
+      'white-space:nowrap',
       'margin:0 2px 4px 0',
       'opacity:.8',
       'user-select:none',
     ].join(';');
+  }
+
+  // 按钮不参与收缩，保证「切换/摘下」与「走个面」入口始终完整可见
+  function barBtnCss(extra) {
+    return [
+      'flex:0 0 auto',
+      'box-sizing:border-box',
+      `height:${BAR_BTN_HEIGHT}px`,
+      'padding:0 8px',
+      'border:1px solid currentColor',
+      'border-radius:6px',
+      'background:transparent',
+      'font-family:inherit',
+      'font-size:11px',
+      'line-height:14px',
+      'white-space:nowrap',
+      'overflow:hidden',
+      'text-overflow:ellipsis',
+      'cursor:pointer',
+      extra || '',
+    ].join(';');
+  }
+
+  // 可变长文案：min-width:0 + 省略号，宽度不够时优先压缩它们而不是换行
+  function barTextCss(kind) {
+    return kind === 'count'
+      ? 'flex:0 0 auto;font-variant-numeric:tabular-nums;'
+      : 'flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;';
+  }
+
+  function makeBar() {
+    const bar = document.createElement('div');
+    bar.setAttribute(BAR_FLAG, '');
+    bar.style.cssText = barCss();
 
     // 最左侧的「走个面」快捷开关：margin-right:auto 让其余右对齐内容留在右边，
     // 未持有该徽章时整颗按钮隐藏（不占位、不影响原有布局）
     const activityBtn = document.createElement('button');
     activityBtn.type = 'button';
-    activityBtn.style.cssText = [
-      'font-size:11px',
-      'line-height:1.4',
-      'padding:1px 8px',
-      'border:1px solid currentColor',
-      'border-radius:6px',
-      'background:transparent',
-      'cursor:pointer',
-      'margin-right:auto',
-      'display:none',
-    ].join(';');
+    activityBtn.style.cssText = barBtnCss('margin-right:auto;display:none;max-width:40%');
     activityBtn.addEventListener('click', toggleActivityBadge);
     bar.__activityBtn = activityBtn;
     bar.appendChild(activityBtn);
@@ -621,6 +665,9 @@
     const countEl = document.createElement('span');
     const statusEl = document.createElement('span');
     const hintEl = document.createElement('span');
+    countEl.style.cssText = barTextCss('count');
+    statusEl.style.cssText = barTextCss('text');
+    hintEl.style.cssText = barTextCss('text');
     bar.__countEl = countEl;
     bar.__statusEl = statusEl;
     bar.__hintEl = hintEl;
@@ -630,15 +677,7 @@
 
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.style.cssText = [
-      'font-size:11px',
-      'line-height:1.4',
-      'padding:1px 8px',
-      'border:1px solid currentColor',
-      'border-radius:6px',
-      'background:transparent',
-      'cursor:pointer',
-    ].join(';');
+    btn.style.cssText = barBtnCss('');
     btn.addEventListener('click', () => {
       const act = bar.__action;
       if (!act) return;
@@ -650,19 +689,41 @@
     return bar;
   }
 
-  // 状态栏始终是编辑器的正向前一个兄弟节点；站点重渲染挪走/删掉时重新补插
+  // 状态栏与编辑器一一对应，归属记在 bar.__editor 上。
+  // 站点重渲染时可能在两者之间插入别的节点（上传遮罩、emoji 面板…），
+  // 这时不能把状态栏搬来搬去——移动节点同样是一次「删 + 插」，会带来多余的重排；
+  // 只要这条状态栏还归这个编辑器用，就留在原地继续更新。
   function barFor(editor) {
+    const reusable = (el) => el
+      && el.hasAttribute
+      && el.hasAttribute(BAR_FLAG)
+      && (!el.__editor || !el.__editor.isConnected || el.__editor === editor);
     const previous = editor.previousElementSibling;
-    if (previous && previous.hasAttribute(BAR_FLAG)) return previous;
+    if (reusable(previous)) {
+      previous.__editor = editor;
+      return previous;
+    }
     const parent = editor.parentNode;
     if (!parent) return null; // 编辑器暂未挂载，等下一次渲染
+    for (const child of parent.children) {
+      if (reusable(child)) {
+        child.__editor = editor;
+        return child;
+      }
+    }
     const bar = makeBar();
+    bar.__editor = editor;
     parent.insertBefore(bar, editor);
     return bar;
   }
 
   function setText(el, text) {
     if (el.textContent !== text) el.textContent = text;
+  }
+
+  // 只在值真正变化时写样式，避免无谓的样式重算
+  function setStyle(el, prop, value) {
+    if (el.style[prop] !== value) el.style[prop] = value;
   }
 
   // 只在文案/显隐真正变化时写 DOM，避免状态栏自身改动触发观察器循环
@@ -675,15 +736,19 @@
     const hintEl = bar.__hintEl;
     const btnEl = bar.__actionBtn;
     setText(countEl, model.count);
-    countEl.style.color = model.warn ? '#dc2626' : '';
-    countEl.style.fontWeight = model.warn ? '600' : '';
+    setStyle(countEl, 'color', model.warn ? '#dc2626' : '');
+    setStyle(countEl, 'fontWeight', model.warn ? '600' : '');
     setText(statusEl, model.status);
+    statusEl.title = model.status;
     const canAct = !!(model.target || model.unequip);
-    setText(hintEl, model.hint + (canAct ? ' · Alt+B 切换' : ''));
-    hintEl.style.color = model.warn
+    // 单行省略后长文案可能被截断，把完整内容放进 title，鼠标悬停仍能看到
+    const hintText = model.hint + (canAct ? ' · Alt+B 切换' : '');
+    setText(hintEl, hintText);
+    hintEl.title = hintText;
+    setStyle(hintEl, 'color', model.warn
       ? '#dc2626'
-      : model.hint.startsWith('✓') ? '#16a34a' : model.hint ? '#d97706' : '';
-    hintEl.style.fontWeight = model.warn ? '600' : '';
+      : model.hint.startsWith('✓') ? '#16a34a' : model.hint ? '#d97706' : '');
+    setStyle(hintEl, 'fontWeight', model.warn ? '600' : '');
 
     // 「走个面」入口：与字数、费用模型无关，只看是否持有/佩戴
     const activityBtn = bar.__activityBtn;
@@ -692,31 +757,32 @@
       const gain = activityGain(activityBadge);
       const locked = !!(pe.active && pe.lockBadge);
       setText(activityBtn, activityLabel(activityBadge, worn));
-      activityBtn.style.display = '';
-      activityBtn.style.color = worn ? '#16a34a' : '';
-      activityBtn.style.fontWeight = worn ? '600' : '';
-      activityBtn.style.opacity = locked ? '.5' : '';
+      setStyle(activityBtn, 'display', '');
+      setStyle(activityBtn, 'color', worn ? '#16a34a' : '');
+      setStyle(activityBtn, 'fontWeight', worn ? '600' : '');
+      setStyle(activityBtn, 'opacity', locked ? '.5' : '');
       activityBtn.disabled = busy;
       activityBtn.title = locked
         ? `潘多拉「${pe.name}」生效中：下次开盒前无法佩戴徽章`
         : `${worn ? '摘下' : '佩戴'}「${activityName(activityBadge)}」${gain == null ? '' : `，活跃度 +${gain}%`}（与评论字数无关）`;
     } else {
-      activityBtn.style.display = 'none';
+      setStyle(activityBtn, 'display', 'none');
     }
 
     if (busy) {
       setText(btnEl, '处理中…');
-      btnEl.style.display = '';
+      setStyle(btnEl, 'display', '');
       btnEl.disabled = true;
     } else if (canAct) {
       setText(btnEl, model.btn);
-      btnEl.style.display = '';
+      btnEl.title = model.btn;
+      setStyle(btnEl, 'display', '');
       btnEl.disabled = false;
       bar.__action = model.target
         ? { type: 'switch', badge: model.target }
         : { type: 'unequip', badge: model.unequip };
     } else {
-      btnEl.style.display = 'none';
+      setStyle(btnEl, 'display', 'none');
       bar.__action = null;
     }
   }
@@ -736,10 +802,13 @@
       if (!inCommentContext(editor)) continue;
       updateBar(editor, barFor(editor));
     }
-    // 编辑器被站点移除、或弹窗关闭后不再属于评论语境时，清理孤儿状态栏
+    // 编辑器被站点移除、或已不在评论语境时清理孤儿状态栏（比如弹窗被 React 卸载）。
+    // 弹窗只是关闭、编辑器还在 DOM 里时保留状态栏：再次打开无需重新插入，
+    // 弹窗内容也就不会因为状态栏「重新占位」再位移一次。
     for (const bar of bars) {
-      const next = bar.nextElementSibling;
-      if (!next || !next.matches(EDITOR_SELECTOR) || !inCommentContext(next)) bar.remove();
+      const editor = bar.__editor;
+      const detached = !editor || !editor.isConnected || editor.parentNode !== bar.parentNode;
+      if (detached || !inCommentContext(editor)) bar.remove();
     }
   }
 

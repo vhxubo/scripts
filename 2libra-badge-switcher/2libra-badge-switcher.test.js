@@ -42,7 +42,7 @@ globalThis.requestAnimationFrame = () => {};
 
 // ---- 把内部函数导出注入 IIFE 末尾 ----
 const EXPORT =
-  ';globalThis.__t={baseCost,badgeCost,classifyBadges,findActivityBadge,activityGain,activityLabel,recommend,currentCostBadge,barModel,jwtDecode,normalizeEquipped,isPostDetail,dialogAllowsBar,readCookie,pandoraActive,pandoraEffect,fmtTime,getPair:()=>pair};';
+  ';globalThis.__t={baseCost,badgeCost,classifyBadges,findActivityBadge,activityGain,activityLabel,recommend,currentCostBadge,barModel,jwtDecode,normalizeEquipped,isPostDetail,dialogAllowsBar,inCommentContext,barCss,barBtnCss,barTextCss,readCookie,pandoraActive,pandoraEffect,fmtTime,getPair:()=>pair};';
 const closer = '})();';
 const last = src.lastIndexOf(closer);
 if (last === -1) { console.error('未找到 IIFE 结束标记'); process.exit(1); }
@@ -311,6 +311,42 @@ eq(T.dialogAllowsBar('node-select-modal-_r_0_', 'modal'), false, '节点选择�
 eq(T.dialogAllowsBar('vote-confirm-modal', 'modal'), false, '投票确认弹窗不注入');
 eq(/function inCommentContext\(/.test(src), true, '渲染按编辑器所在语境判断，不再只看路由');
 eq(/addEventListener\('toggle'/.test(src), true, '原生 dialog 打开/关闭时补一次渲染');
+
+// ---- inCommentContext：编辑器只要在弹窗里，就按弹窗身份判断，且关闭的帖子弹窗仍算评论语境 ----
+// （关闭时保留状态栏，重新打开就不必再插入一次，弹窗内容也就不会二次位移）
+function fakeEditor(dlg) {
+  return { closest: () => dlg || null, querySelector: () => null };
+}
+const postDialog = { id: '', className: 'modal modal-open' };
+const closedPostDialog = { id: 'post-detail-modal', className: 'modal' };
+const editPostDialog = { id: 'edit-post-modal', className: 'modal' };
+
+const savedPath = globalThis.window.location.pathname;
+globalThis.window.location.pathname = '/post/ai-tools/o9VSA_1';
+eq(T.inCommentContext(fakeEditor(postDialog)), true, '详情页里的帖子弹窗注入');
+eq(T.inCommentContext(fakeEditor(editPostDialog)), false, '详情页里的「编辑帖子」弹窗不注入（旧实现会被路由短路）');
+eq(T.inCommentContext(fakeEditor(null)), true, '详情页整页评论框注入');
+
+globalThis.window.location.pathname = '/';
+eq(T.inCommentContext(fakeEditor(postDialog)), true, '列表页打开的帖子弹窗注入');
+eq(T.inCommentContext(fakeEditor(closedPostDialog)), true, '已关闭的帖子弹窗仍算评论语境，状态栏保留以便复用');
+eq(T.inCommentContext(fakeEditor(editPostDialog)), false, '列表页「编辑帖子」弹窗不注入');
+eq(T.inCommentContext(fakeEditor(null)), false, '列表页非弹窗编辑器不注入');
+globalThis.window.location.pathname = savedPath;
+
+// ---- 状态栏布局必须让高度恒定：文案变化只能省略，不能换行把弹窗里的正文顶下去 ----
+const barCss = T.barCss();
+eq(/flex-wrap:nowrap/.test(barCss), true, '状态栏单行不换行');
+eq(/height:20px/.test(barCss), true, '状态栏固定高度 20px');
+eq(/min-height:20px/.test(barCss) && /max-height:20px/.test(barCss), true, '状态栏上下限高度固定（不被内容撑高）');
+eq(/overflow:hidden/.test(barCss) && /white-space:nowrap/.test(barCss), true, '溢出裁剪 + 不换行，高度不随文案变化');
+eq(/height:16px/.test(T.barBtnCss('')), true, '按钮固定高度，不撑高状态栏');
+eq(/flex:0 0 auto/.test(T.barBtnCss('')), true, '按钮不收缩，操作入口始终完整');
+eq(/min-width:0/.test(T.barTextCss('text')) && /text-overflow:ellipsis/.test(T.barTextCss('text')), true, '长文案用省略号收在一行');
+eq(/flex:0 0 auto/.test(T.barTextCss('count')), true, '字数不参与收缩');
+// 状态栏按编辑器归属复用，不在「别家节点插进来」时反复删插
+eq(/bar\.__editor = editor/.test(src), true, '状态栏记录归属的编辑器，已存在时复用');
+eq(/editor\.parentNode !== bar\.parentNode/.test(src), true, '只在归属编辑器被摘走时才回收状态栏');
 
 // ---- readCookie ----
 globalThis.document.cookie = 'a=1; access_token=TOK; refresh_token=R';
