@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         2libra 评论金币徽章助手
 // @namespace    https://vhxubo.local/2libra-badge-switcher
-// @version      1.4.1
-// @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵或两枚同戴时改为摘下）；每日潘多拉事件优先于徽章逻辑：回归起点锁定徽章时不再给切换按钮、妙笔生花固定费用/多说多写免评论费时徽章退出计费、金币升降机按 ±% 乘算费用、多说多写/小表情给出约束提示；文案与告警阈值由徽章属性与事件文案现算；切换通过 /api/badges/equip 完成，切换前自动检查是否收费；内置自动更新：@updateURL/@downloadURL 指向 GitHub raw，由油猴管理器自动检查并升级（raw 仅缓存约 5 分钟，GitHub Actions 校验版本号递增）。
+// @version      1.5.0
+// @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵或两枚同戴时改为摘下）；每日潘多拉事件优先于徽章逻辑：回归起点锁定徽章时不再给切换按钮、妙笔生花固定费用/多说多写免评论费时徽章退出计费、金币升降机按 ±% 乘算费用、多说多写/小表情给出约束提示；文案与告警阈值由徽章属性与事件文案现算；帖子弹窗（列表页点击帖子时用原生 dialog 渲染）里的评论框同样注入；切换通过 /api/badges/equip 完成，切换前自动检查是否收费；内置自动更新：@updateURL/@downloadURL 指向 GitHub raw，由油猴管理器自动检查并升级（raw 仅缓存约 5 分钟，GitHub Actions 校验版本号递增）。
 // @author       vhxubo
 // @match        https://2libra.com/*
 // @run-at       document-idle
@@ -311,6 +311,17 @@
     return !/^\/post\/(?:latest(?:-comments)?|hot)(?:\/|$)/.test(pathname);
   }
 
+  // ---------- 注入环境（整页 / 弹窗） ----------
+  // 站点有两种呈现帖子的方式：整页 /post/节点/短ID，以及列表页点击帖子后在原生 <dialog> 里弹出
+  // （地址栏仍停在列表页）。所以「要不要插状态栏」得看编辑器所处的位置，只看路由会漏掉弹窗。
+  // 弹窗里同样带 markdown 编辑器的还有「编辑帖子」「追加附言」「搜索」等，用 id/class 排除掉，
+  // 免得在这些非评论场景里也插一条费用估算。
+  const NON_COMMENT_DIALOG_RE = /(edit-post|postscript|compose|draft|search|login|register|settings|node-select|rule|redeem|vote|bet|collection|pin-manage|anonymous|pandora|sign|avatar|profile|violation)/i;
+
+  function dialogAllowsBar(id, cls) {
+    return !NON_COMMENT_DIALOG_RE.test(`${id || ''} ${cls || ''}`);
+  }
+
   function readCookie(name) {
     try {
       const hit = document.cookie.split(/;\s*/).find((c) => c.startsWith(name + '='));
@@ -471,6 +482,20 @@
   // ---------- 状态栏 ----------
   const EDITOR_SELECTOR = '.w-md-editor';
   const INPUT_SELECTOR = '.w-md-editor-text-input, .w-md-editor-text textarea, textarea';
+  // 原生 <dialog>（daisyUI 的 modal 也基于它），以及老式的 .modal.modal-open 容器
+  const DIALOG_SELECTOR = 'dialog[open], .modal.modal-open, [role="dialog"]';
+
+  function openDialogOf(el) {
+    return el && typeof el.closest === 'function' ? el.closest(DIALOG_SELECTOR) : null;
+  }
+
+  // 编辑器是否处在「帖子评论」语境：详情页整页，或列表页上弹出的帖子弹窗
+  function inCommentContext(editor) {
+    if (isPostDetail(window.location.pathname)) return true;
+    const dlg = openDialogOf(editor);
+    if (!dlg) return false;
+    return dialogAllowsBar(dlg.id, dlg.className);
+  }
 
   function editorText(editor) {
     const ta = editor.querySelector(INPUT_SELECTOR);
@@ -567,18 +592,19 @@
 
   // ---------- 渲染 ----------
   function render() {
-    if (!enabled || !isPostDetail(window.location.pathname)) {
+    if (!enabled) {
       removeBars();
       return;
     }
     const bars = document.querySelectorAll(`[${BAR_FLAG}]`);
     for (const editor of document.querySelectorAll(EDITOR_SELECTOR)) {
+      if (!inCommentContext(editor)) continue;
       updateBar(editor, barFor(editor));
     }
-    // 编辑器被站点移除后，清理孤儿状态栏
+    // 编辑器被站点移除、或弹窗关闭后不再属于评论语境时，清理孤儿状态栏
     for (const bar of bars) {
       const next = bar.nextElementSibling;
-      if (!next || !next.matches(EDITOR_SELECTOR)) bar.remove();
+      if (!next || !next.matches(EDITOR_SELECTOR) || !inCommentContext(next)) bar.remove();
     }
   }
 
@@ -644,14 +670,18 @@
     switchTo(best);
   }
 
-  // 取焦点所在编辑器（回复框）的字数，兜底第一个编辑器
+  // 取焦点所在编辑器（回复框）的字数；
+  // 没有焦点时优先取弹窗里的那个（列表页弹窗看帖时页面上的编辑器可能不止一个），最后兜底第一个
   function activeLength() {
+    const editors = document.querySelectorAll(EDITOR_SELECTOR);
     const active = document.activeElement;
-    for (const editor of document.querySelectorAll(EDITOR_SELECTOR)) {
+    for (const editor of editors) {
       if (editor.contains(active)) return editorText(editor).length;
     }
-    const first = document.querySelector(EDITOR_SELECTOR);
-    return first ? editorText(first).length : 0;
+    for (const editor of editors) {
+      if (openDialogOf(editor)) return editorText(editor).length;
+    }
+    return editors.length ? editorText(editors[0]).length : 0;
   }
 
   // ---------- 轻提示 ----------
@@ -708,6 +738,10 @@
   // 输入走捕获阶段的 input 事件（React 受控组件也会触发），DOM 增删走全局观察器
   document.addEventListener('input', requestRender, true);
   window.addEventListener('keydown', onHotkey);
+
+  // 原生 <dialog> 的打开/关闭不一定伴随 DOM 增删（重新打开时内容还在），
+  // 弹窗里看帖时靠 toggle 事件补一次渲染
+  document.addEventListener('toggle', requestRender, true);
 
   new MutationObserver(requestRender).observe(document.documentElement, {
     childList: true,

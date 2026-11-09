@@ -1,6 +1,6 @@
 # 2libra 评论金币徽章助手（2libra Badge Switcher）
 
-A Tampermonkey userscript for [2libra.com](https://2libra.com/): a live helper bar above every comment editor on post pages that shows the character count and the **estimated coin cost** of your next comment, then picks the cheaper of your two cost-modifying badges — switching them via the site's own `/api/badges/equip` endpoint. The **daily Pandora event takes priority over badge logic**: when 「回归起点」 locks all badges the bar stops offering switches, when 「妙笔生花」 fixes the comment cost or 「多说多写」(gold) makes comments free the badges drop out of the calculation, and 「金币升降机」 scales every displayed cost by its ±%.
+A Tampermonkey userscript for [2libra.com](https://2libra.com/): a live helper bar above every comment editor on post pages (including posts 2libra renders in its native `<dialog>` popup from a list page) that shows the character count and the **estimated coin cost** of your next comment, then picks the cheaper of your two cost-modifying badges — switching them via the site's own `/api/badges/equip` endpoint. The **daily Pandora event takes priority over badge logic**: when 「回归起点」 locks all badges the bar stops offering switches, when 「妙笔生花」 fixes the comment cost or 「多说多写」(gold) makes comments free the badges drop out of the calculation, and 「金币升降机」 scales every displayed cost by its ±%.
 
 ## 💡 Background
 
@@ -26,6 +26,7 @@ So for this pair the break-even is 100 characters: below it the percent badge wi
 ## ✨ Features
 
 - **Live char count** — the bar re-renders on every keystroke in any comment editor on the page (bottom composer, reply boxes), powered by a capture-phase `input` listener + one rAF-debounced `MutationObserver`
+- **Dialog-rendered posts** — when 2libra opens a post inside its native `<dialog>` modal (clicking a post on a list page keeps the URL on the list page), the bar is injected into that dialog's comment editor too. The context check is per editor (post-detail route **or** an open post dialog), so a bar is never attached on unrelated pages; dialogs that merely *contain* an editor for another purpose (`edit-post`, `add-postscripts`, search, node picker, voting…) are excluded by id/class, and a `toggle` listener re-renders when a dialog is reopened from cache
 - **Pandora first** — the active daily event (fetched from `/api/pandora/today`, refreshed on tab focus) outranks badge logic:
   - 「回归起点」`badge_drop_lock` — badges are dropped & locked until the next box: red bar with the event name and local-time deadline, no switch/unequip buttons, Alt+B explains instead of switching, and a stale switch request is intercepted
   - 「妙笔生花」`fixed_text_cost` — the comment cost is fixed at N coins (from `rolled_value`, falling back to parsing 「固定为 N 金币」 from the event text): the bar shows the flat cost and badges step aside
@@ -50,7 +51,7 @@ So for this pair the break-even is 100 characters: below it the percent badge wi
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/)
 2. Install from `https://raw.githubusercontent.com/vhxubo/scripts/main/2libra-badge-switcher/2libra-badge-switcher.user.js` (the same URL is used for updates), or create a new userscript and paste in `2libra-badge-switcher.user.js`, then save
-3. Open any post on https://2libra.com/ and scroll to the comment editor — the helper bar sits right above it
+3. Open any post on https://2libra.com/ and scroll to the comment editor — the helper bar sits right above it (or click a post on a list page if 2libra opens it in a dialog; the bar sits above the editor inside the dialog)
 
 ## 📖 Usage
 
@@ -69,7 +70,7 @@ On every push to `main` that touches the userscript, [`.github/workflows/2libra-
 
 ## 🧪 Testing
 
-Pure-logic tests (cost tiers, badge classification incl. `badge.id` normalization, recommendation break-even, dynamic percent copy, equal-cost pairs, dual-equip and「摘下」decisions, bar copy for every scenario, JWT decode incl. UTF-8 usernames, equipped-list normalization, route matching, cookie reading incl. malformed encoding, plus the full Pandora suite — activity window, per-event parsing incl. `rolled_value`/text fallback/constraint overrides, every bar scenario and ±% rounding, and the update-metadata assertions — raw URL pair and no cross-origin grants) run in Node against the real script source:
+Pure-logic tests (cost tiers, badge classification incl. `badge.id` normalization, recommendation break-even, dynamic percent copy, equal-cost pairs, dual-equip and「摘下」decisions, bar copy for every scenario, JWT decode incl. UTF-8 usernames, equipped-list normalization, route matching, dialog-context matching (post dialog vs edit/附言/search dialogs), cookie reading incl. malformed encoding, plus the full Pandora suite — activity window, per-event parsing incl. `rolled_value`/text fallback/constraint overrides, every bar scenario and ±% rounding, and the update-metadata assertions — raw URL pair and no cross-origin grants) run in Node against the real script source:
 
 ```bash
 node 2libra-badge-switcher.test.js
@@ -80,7 +81,8 @@ node 2libra-badge-switcher.test.js
 - The estimate covers **posting** comments; editing a comment has a different (slightly cheaper) tier and is not modeled
 - Pandora effect parsing mirrors the payloads observed in the wild (`event_code` / `event_title` / `rolled_value` / `comment_constraint`); if the site ships new event codes or renames the wording, the bar falls back to plain badge logic instead of guessing
 - The site enforces a badge-switch cooldown (`BADGE_CHANGE_COOLDOWN_MINUTES = 10` in its frontend constants); a cooldown rejection surfaces as a red toast from the site's error message
-- The editor is detected via the site's `w-md-editor` markdown editor; if the site swaps editor libraries the selectors need updating
+- The editor is detected via the site's `w-md-editor` markdown editor; if the site swaps editor libraries the selectors need updating (this also applies inside the post dialog)
+- The post dialog itself is recognised by “an editor inside an open `<dialog>`/`[role="dialog"]` that isn't a known non-comment modal”. If the site gives the post dialog an id/class that collides with the exclusion list, or renders its comment box outside the dialog, the selector logic needs a tweak
 - Flat + percent badges are assumed not to stack — switching equips the target and unequips the other one; if the unequip call fails the bar surfaces it and offers a manual「摘下」rather than silently pretending the state changed
 - If the site starts charging for badge switches, you'll see a confirm dialog (via `check-cost`); the script never spends coins silently
 - The `access_token` must be a JS-readable cookie for the badge features to work; if the site makes it HttpOnly, the bar degrades to char count + base-tier cost

@@ -42,7 +42,7 @@ globalThis.requestAnimationFrame = () => {};
 
 // ---- 把内部函数导出注入 IIFE 末尾 ----
 const EXPORT =
-  ';globalThis.__t={baseCost,badgeCost,classifyBadges,recommend,currentCostBadge,barModel,jwtDecode,normalizeEquipped,isPostDetail,readCookie,pandoraActive,pandoraEffect,fmtTime,getPair:()=>pair};';
+  ';globalThis.__t={baseCost,badgeCost,classifyBadges,recommend,currentCostBadge,barModel,jwtDecode,normalizeEquipped,isPostDetail,dialogAllowsBar,readCookie,pandoraActive,pandoraEffect,fmtTime,getPair:()=>pair};';
 const closer = '})();';
 const last = src.lastIndexOf(closer);
 if (last === -1) { console.error('未找到 IIFE 结束标记'); process.exit(1); }
@@ -271,6 +271,19 @@ eq(T.isPostDetail('/post/latest'), false, '聚合列表页 latest');
 eq(T.isPostDetail('/post/hot/today'), false, '聚合列表页 hot');
 eq(T.isPostDetail('/coins'), false, '金币页');
 eq(T.isPostDetail('/create'), false, '发帖页');
+
+// ---- 弹窗注入判定：列表页点击帖子后用原生 <dialog> 渲染正文，地址栏仍是列表页 ----
+// 路由判断在这种情况下为 false，必须靠弹窗语境补上；带编辑器的其它弹窗要排除
+eq(T.dialogAllowsBar('post-detail-modal-abc', 'modal'), true, '帖子弹窗允许注入');
+eq(T.dialogAllowsBar('', 'modal'), true, '无 id 的弹窗不误杀（帖子正文弹窗 id 形态未固定）');
+eq(T.dialogAllowsBar(undefined, undefined), true, '空属性容错');
+eq(T.dialogAllowsBar('edit-post-modal', 'modal'), false, '编辑帖子弹窗不注入（编辑费率不同）');
+eq(T.dialogAllowsBar('add-postscripts-modal', 'modal'), false, '追加附言弹窗不注入（附言费率不同）');
+eq(T.dialogAllowsBar('search-modal', 'modal'), false, '搜索弹窗不注入');
+eq(T.dialogAllowsBar('node-select-modal-_r_0_', 'modal'), false, '节点选择弹窗不注入');
+eq(T.dialogAllowsBar('vote-confirm-modal', 'modal'), false, '投票确认弹窗不注入');
+eq(/function inCommentContext\(/.test(src), true, '渲染按编辑器所在语境判断，不再只看路由');
+eq(/addEventListener\('toggle'/.test(src), true, '原生 dialog 打开/关闭时补一次渲染');
 
 // ---- readCookie ----
 globalThis.document.cookie = 'a=1; access_token=TOK; refresh_token=R';
