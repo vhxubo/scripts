@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         2libra 评论金币徽章助手
 // @namespace    https://vhxubo.local/2libra-badge-switcher
-// @version      1.6.0
+// @version      1.6.2
 // @description  在 2libra.com 帖子页评论框上方实时显示字数与预计金币消耗，识别「固定扣费」（如前排打手恒定 8 金币）与「按比例减免」（如都听我说减 30%）两类评论徽章，按徽章真实参数推荐更省的一种并给出切换按钮，Alt+B 一键切到更省的那枚（已最省时不动，戴着比不戴更贵或两枚同戴时改为摘下）；持有「走个面」徽章时在状态栏最左侧提供活跃度 +20% 的一键佩戴/摘下入口（与评论字数、金币费用无关，不参与费用推荐）；每日潘多拉事件优先于徽章逻辑：回归起点锁定徽章时不再给切换按钮、妙笔生花固定费用/多说多写免评论费时徽章退出计费、金币升降机按 ±% 乘算费用、多说多写/小表情给出约束提示；文案与告警阈值由徽章属性与事件文案现算；帖子弹窗（列表页点击帖子时用原生 dialog 渲染）里的评论框同样注入，且状态栏采用定高响应式工具条、长文案省略显示，弹窗动画与打字都不会把正文顶得上下跳动；切换通过 /api/badges/equip 完成，切换前自动检查是否收费；内置自动更新：@updateURL/@downloadURL 指向 GitHub raw，由油猴管理器自动检查并升级（raw 仅缓存约 5 分钟，GitHub Actions 校验版本号递增）。
 // @author       vhxubo
 // @match        https://2libra.com/*
@@ -610,8 +610,15 @@
     style.id = 'two-libra-badge-styles';
     style.textContent = `
       [data-badge-switcher] {
-        --badge-accent:#087f8c; --badge-soft:#e8f5f5;
-        --badge-border:#d7e5e7; --badge-surface:#f6fafb; --badge-ink:#344d59;
+        --badge-accent:var(--color-primary,#087f8c);
+        --badge-soft:var(--color-base-100,#e8f5f5);
+        --badge-border:var(--color-base-300,#d7e5e7);
+        --badge-surface:var(--color-base-200,#f6fafb);
+        --badge-ink:var(--color-base-content,#344d59);
+        --badge-danger:color-mix(in oklab,var(--color-error,#dc2626) 65%,var(--badge-ink));
+        --badge-success:color-mix(in oklab,var(--color-success,#15803d) 65%,var(--badge-ink));
+        --badge-warning:color-mix(in oklab,var(--color-warning,#b45309) 65%,var(--badge-ink));
+        --badge-action-ink:var(--color-primary-content,#fff);
         container-type:inline-size;
         color:var(--badge-ink);
         background:var(--badge-surface);
@@ -621,7 +628,7 @@
         font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
       }
       [data-badge-switcher] button {
-        color:var(--badge-accent); background:var(--badge-soft);
+        color:var(--badge-ink); background:var(--badge-soft);
         border-color:var(--badge-border);
       }
       [data-badge-switcher] button:hover:not(:disabled) {
@@ -632,23 +639,16 @@
       }
       [data-badge-switcher] button:disabled { cursor:wait; opacity:.55; }
       [data-badge-switcher] .badge-count {
-        color:var(--badge-accent); font-weight:700; font-size:14px;
+        color:var(--badge-ink); font-weight:700; font-size:14px;
         padding-right:10px; border-right:1px solid var(--badge-border);
         font-family:ui-monospace,"SFMono-Regular",Consolas,monospace;
       }
       [data-badge-switcher] .badge-status { flex:1 1 auto; }
       [data-badge-switcher] .badge-hint:empty { display:none; }
       [data-badge-switcher] .badge-action {
-        background:var(--badge-accent); color:#fff; border-color:transparent;
+        background:var(--badge-accent); color:var(--badge-action-ink); border-color:transparent;
       }
       [data-badge-switcher] .badge-action:hover:not(:disabled) { filter:brightness(.92); background:var(--badge-accent); }
-      @media (prefers-color-scheme:dark) {
-        [data-badge-switcher] {
-          --badge-accent:#74d3db; --badge-soft:#203b43;
-          --badge-border:#36505a; --badge-surface:#1d2b33; --badge-ink:#d1e0e5;
-        }
-        [data-badge-switcher] .badge-action { color:#142e35; }
-      }
       @container (max-width:620px) {
         [data-badge-switcher] .badge-hint { display:none; }
         [data-badge-switcher] button { max-width:35%; }
@@ -812,7 +812,7 @@
     const hintEl = bar.__hintEl;
     const btnEl = bar.__actionBtn;
     setText(countEl, model.count);
-    setStyle(countEl, 'color', model.warn ? '#dc2626' : '');
+    setStyle(countEl, 'color', model.warn ? 'var(--badge-danger)' : '');
     setStyle(countEl, 'fontWeight', model.warn ? '600' : '');
     setText(statusEl, model.status);
     statusEl.title = model.status;
@@ -822,8 +822,8 @@
     setText(hintEl, hintText);
     hintEl.title = hintText;
     setStyle(hintEl, 'color', model.warn
-      ? '#dc2626'
-      : model.hint.startsWith('✓') ? '#16a34a' : model.hint ? '#d97706' : '');
+      ? 'var(--badge-danger)'
+      : model.hint.startsWith('✓') ? 'var(--badge-success)' : model.hint ? 'var(--badge-warning)' : '');
     setStyle(hintEl, 'fontWeight', model.warn ? '600' : '');
 
     // 「走个面」入口：与字数、费用模型无关，只看是否持有/佩戴
@@ -834,7 +834,7 @@
       const locked = !!(pe.active && pe.lockBadge);
       setText(activityBtn, activityLabel(activityBadge, worn));
       setStyle(activityBtn, 'display', '');
-      setStyle(activityBtn, 'color', worn ? 'var(--badge-accent)' : '');
+      setStyle(activityBtn, 'color', worn ? 'var(--badge-success)' : '');
       activityBtn.setAttribute('aria-pressed', String(worn));
       setStyle(activityBtn, 'fontWeight', worn ? '600' : '');
       setStyle(activityBtn, 'opacity', locked ? '.5' : '');
@@ -1026,9 +1026,9 @@
       'font-family:system-ui,sans-serif',
       'border-radius:8px',
       'font-size:13px',
-      'color:#fff',
+      isErr ? 'color:var(--color-error-content,#fff)' : 'color:var(--color-primary-content,#fff)',
       'max-width:80vw',
-      isErr ? 'background:#dc2626' : 'background:#176773',
+      isErr ? 'background:var(--color-error,#dc2626)' : 'background:var(--color-primary,#176773)',
     ].join(';');
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 2500);
