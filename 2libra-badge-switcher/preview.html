@@ -7,7 +7,7 @@
 *{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--color-base-content);font:14px/1.7 "PingFang SC","Microsoft YaHei",sans-serif}main{max-width:1280px;margin:auto;padding:40px 28px 70px}header{border-left:5px solid var(--color-primary);padding-left:22px;margin-bottom:30px}.eyebrow{font:12px/1.5 ui-monospace,monospace;letter-spacing:2px;color:var(--muted)}h1{font:600 clamp(26px,4vw,44px)/1.3 "Songti SC",SimSun,serif;margin:10px 0}p{margin:8px 0;color:var(--muted)}h2{font-size:19px;margin:26px 0 12px}button,select,input{font:inherit}button,select{border:1px solid var(--color-base-300);background:var(--color-base-100);color:inherit;border-radius:6px;padding:6px 12px}button{cursor:pointer}button:hover{border-color:var(--color-primary)}button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0}.controls label{display:flex;gap:6px;align-items:center;color:var(--muted)}.stage,.sample{background:var(--color-base-100);border:1px solid var(--color-base-300);border-radius:10px;padding:18px;min-width:0}.editor{border:1px solid var(--color-base-300);border-radius:5px;overflow:hidden}.editor-tools{padding:5px 12px;background:var(--color-base-200);color:var(--muted);font:12px/1.8 ui-monospace,monospace}textarea{display:block;width:100%;min-height:100px;resize:vertical;border:0;padding:12px;background:var(--color-base-100);color:inherit;font:14px/1.7 inherit}.editor-footer{padding:6px 12px;display:flex;justify-content:space-between;color:var(--muted);font-size:11px;border-top:1px solid var(--color-base-300)}.grid{display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}.sample h3{font-size:14px;margin:0 0 4px}.sample p{font-size:12px;margin:0 0 14px}.sample .editor textarea{min-height:58px;height:58px}.viewport{max-width:100%;margin:auto;transition:width .15s}.sample-body{max-width:100%}.sample .summary{margin:10px 0 0;font-size:12px;color:var(--muted);overflow-wrap:anywhere}.tag{color:var(--color-primary);font:11px ui-monospace,monospace;margin-right:8px}.section-intro{display:flex;justify-content:space-between;gap:12px;align-items:center}.note{font-size:12px}dialog{width:min(920px,94vw);border:1px solid var(--color-base-300);border-radius:12px;background:var(--color-base-100);color:var(--color-base-content);padding:22px}dialog::backdrop{background:#102c3688}footer{margin-top:28px;color:var(--muted);font-size:12px}@media(max-width:600px){main{padding:24px 12px}.stage,.sample{padding:12px}.controls{gap:8px}.controls label{flex-wrap:wrap}header{padding-left:14px}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 <main>
-<header><div class="eyebrow">2LIBRA / BADGE SWITCHER / v1.6.6 · 大平衡者预览</div><h1>每一种状态，都在这里。</h1><p>评论金币徽章助手效果预览 · 只展示当前字数下的最优解；并重徽章并排两个按钮二选一，戴其中一枚时另一枚仍可同价替换。</p></header>
+<header><div class="eyebrow">2LIBRA / BADGE SWITCHER / v1.6.7 · 大平衡者预览</div><h1>每一种状态，都在这里。</h1><p>评论金币徽章助手效果预览 · 只展示当前字数下的最优解；并重徽章并排两个按钮二选一，戴其中一枚时另一枚仍可同价替换。</p></header>
 <div class="controls"><button id="theme">切换深色</button><button id="open-dialog">打开帖子弹窗</button><button id="reset">重置演示</button><span class="note">离线演示，操作仅修改本页模拟状态。</span></div>
 <h2>交互试用</h2>
 <div class="stage"><div class="controls">
@@ -454,6 +454,7 @@ function eventEffect(key){const [name,box]=events[key];return box}
     (document.head || document.body).appendChild(style);
   }
 
+  // ==== BAR RENDER START （由 2libra-badge-switcher.user.js 生成） ====
   function barCss() {
     return [
       'display:flex',
@@ -547,8 +548,7 @@ function eventEffect(key){const [name,box]=events[key];return box}
       btn.style.cssText = barBtnCss('display:none');
       btn.addEventListener('click', () => {
         const act = btn.__action;
-        if (!act) return;
-        if (act.type === 'switch') switchTo(act.badge);
+        if (act && act.type === 'switch') switchTo(act.badge);
       });
       return btn;
     };
@@ -558,6 +558,34 @@ function eventEffect(key){const [name,box]=events[key];return box}
     bar.__actionBtn2 = btn2;
     bar.appendChild(btn);
     bar.appendChild(btn2);
+    return bar;
+  }
+
+  // 状态栏与编辑器一一对应，归属记在 bar.__editor 上。
+  // 站点重渲染时可能在两者之间插入别的节点（上传遮罩、emoji 面板…），
+  // 这时不能把状态栏搬来搬去——移动节点同样是一次「删 + 插」，会带来多余的重排；
+  // 只要这条状态栏还归这个编辑器用，就留在原地继续更新。
+  function barFor(editor) {
+    const reusable = (el) => el
+      && el.hasAttribute
+      && el.hasAttribute(BAR_FLAG)
+      && (!el.__editor || !el.__editor.isConnected || el.__editor === editor);
+    const previous = editor.previousElementSibling;
+    if (reusable(previous)) {
+      previous.__editor = editor;
+      return previous;
+    }
+    const parent = editor.parentNode;
+    if (!parent) return null; // 编辑器暂未挂载，等下一次渲染
+    for (const child of parent.children) {
+      if (reusable(child)) {
+        child.__editor = editor;
+        return child;
+      }
+    }
+    const bar = makeBar();
+    bar.__editor = editor;
+    parent.insertBefore(bar, editor);
     return bar;
   }
 
@@ -643,7 +671,7 @@ function eventEffect(key){const [name,box]=events[key];return box}
     for (const el of [btnEl, btnEl2]) el.classList.toggle('badge-action-pair', isPair);
     bar.classList.toggle('has-action-pair', isPair);
   }
-
+  // ==== BAR RENDER END ====
 
 // 演示不访问网络；每个评论框独立保存状态。
 const records=[];let activeRecord=null;

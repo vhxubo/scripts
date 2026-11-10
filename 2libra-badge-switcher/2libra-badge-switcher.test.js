@@ -367,6 +367,12 @@ const cssAt = src.indexOf('style.textContent = `');
 const userCss = src.slice(cssAt + 'style.textContent = `'.length, src.indexOf('`;', cssAt));
 const previewCss = between(previewScript, '/* ==== BAR CSS START', '/* ==== BAR CSS END');
 eq(previewCss.trim() === userCss.trim(), true, 'preview 工具栏样式与 user.js 同步（运行 node build-preview.js）');
+const userRender = src.slice(
+  src.indexOf('  function barCss()'),
+  src.indexOf('  function removeBars()'),
+);
+const previewRender = between(previewScript, '// ==== BAR RENDER START', '// ==== BAR RENDER END');
+eq(previewRender.trim() === userRender.trim(), true, 'preview 工具栏渲染与 user.js 同步（运行 node build-preview.js）');
 
 // ---- readCookie ----
 globalThis.document.cookie = 'a=1; access_token=TOK; refresh_token=R';

@@ -36,6 +36,18 @@ const c1 = html.indexOf(cssEndMarker);
 if (c0 < 0 || c1 < 0 || c1 < c0) throw new Error('preview.html 中找不到样式标记');
 html = html.slice(0, c0 + cssStartMarker.length) + css + html.slice(c1);
 
+// 工具栏渲染函数也由 userscript 生成：预览只保留演示外壳
+const renderStart = user.indexOf('  function barCss()');
+const renderEnd = user.indexOf('  function removeBars()');
+if (renderStart < 0 || renderEnd < 0) throw new Error('userscript 中找不到工具栏渲染段');
+const render = user.slice(renderStart, renderEnd).trimEnd() + '\n';
+const renderStartMarker = '  // ==== BAR RENDER START （由 2libra-badge-switcher.user.js 生成） ====\n';
+const renderEndMarker = '  // ==== BAR RENDER END ====\n';
+const r0 = html.indexOf(renderStartMarker);
+const r1 = html.indexOf(renderEndMarker);
+if (r0 < 0 || r1 < 0 || r1 < r0) throw new Error('preview.html 中找不到渲染标记');
+html = html.slice(0, r0 + renderStartMarker.length) + render + html.slice(r1);
+
 const version = (user.match(/^\/\/\s*@version\s+(\S+)/m) || [])[1];
 if (version) {
   html = html.replace(/(2LIBRA \/ BADGE SWITCHER \/ v)[\d.]+/, `$1${version}`);
