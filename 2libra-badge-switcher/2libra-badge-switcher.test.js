@@ -46,7 +46,7 @@ globalThis.requestAnimationFrame = () => {};
 
 // ---- 把内部函数导出注入 IIFE 末尾 ----
 const EXPORT =
-  ';globalThis.__t={baseCost,badgeCost,classifyBadges,findActivityBadge,activityGain,activityLabel,recommend,currentCostBadge,barModel,jwtDecode,normalizeEquipped,isPostDetail,dialogAllowsBar,inCommentContext,barCss,barBtnCss,barTextCss,readCookie,pandoraActive,pandoraEffect,fmtTime,cachedRefresh,syncCommentState,getPair:()=>pair};';
+  ';globalThis.__t={baseCost,badgeCost,classifyBadges,findActivityBadge,activityGain,activityLabel,commentDiscount,costBadges,wornCostBadges,optimalBadges,barModel,jwtDecode,normalizeEquipped,isPostDetail,dialogAllowsBar,inCommentContext,barCss,barBtnCss,barTextCss,readCookie,pandoraActive,pandoraEffect,fmtTime,cachedRefresh,syncCommentState,getPair:()=>pair};';
 const closer = '})();';
 const last = src.lastIndexOf(closer);
 if (last === -1) { console.error('未找到 IIFE 结束标记'); process.exit(1); }
@@ -61,6 +61,7 @@ if (!T) { console.error('测试导出失败'); process.exit(1); }
 const FIXED = { badge_id: 'f30d62e0-f1a7-4bf5-a064-a9ad5a8b394c', badge: { name: '前排打手', attributes: { badge_name: '前排打手', comment_cost: -8 } } };
 const PERCENT = { badge_id: 'b0509602-6b04-4d50-ba54-30f5206cf64e', badge: { name: '都听我说！', attributes: { badge_name: '都听我说！', comment_cost_percent: 0.3 } } };
 const PLAIN = { badge_id: '130922be-e886-4fef-b830-63501e2f1596', badge: { name: '观月', attributes: null } };
+const GRAND = { badge_id: '18e085aa-a082-4421-a5f0-5cdb02921c43', badge: { name: '大平衡者', attributes: { badge_name: '大平衡者', coin_system_cost_percent: 0.3 } } };
 
 let passed = 0;
 let failed = 0;
@@ -90,18 +91,21 @@ eq(T.badgeCost(150, PERCENT), 21, '减免 30%：30×0.7 = 21');
 eq(T.badgeCost(1001, PERCENT), 42, '减免 30%：60×0.7 = 42');
 eq(T.badgeCost(2001, PERCENT), 84, '减免 30%：120×0.7 = 84');
 eq(T.badgeCost(5001, PERCENT), 140, '减免 30%：200×0.7 = 140');
+eq(T.commentDiscount(GRAND), 0.3, '大平衡者 coin_system_cost_percent 计入发评减免');
+eq(T.badgeCost(80, GRAND), 7, '大平衡者 30%：10×0.7 = 7');
+eq(T.badgeCost(5001, GRAND), 140, '大平衡者 30%：200×0.7 = 140');
 eq(T.badgeCost(80, null), 10, '未佩戴走基础阶梯');
 eq(T.badgeCost(80, PLAIN), 10, '普通徽章不影响费用');
 
 // ---- classifyBadges ----
-const c1 = T.classifyBadges([PLAIN, PERCENT, FIXED]);
-eq(c1.fixed && c1.fixed.badge_id, FIXED.badge_id, '识别固定扣费徽章');
-eq(c1.percent && c1.percent.badge_id, PERCENT.badge_id, '识别减免徽章');
+const c1 = T.classifyBadges([PLAIN, PERCENT, FIXED, GRAND]);
+eq(c1.fixed.map((b) => b.badge_id), [FIXED.badge_id], '识别固定扣费徽章');
+eq(c1.percent.map((b) => b.badge_id).sort(), [PERCENT.badge_id, GRAND.badge_id].sort(), '识别都听我说与大平衡者两枚减免徽章');
 const c2 = T.classifyBadges([PLAIN]);
-eq(c2.fixed, null, '无费用徽章时 fixed=null');
-eq(c2.percent, null, '无费用徽章时 percent=null');
+eq(c2.fixed, [], '无费用徽章时 fixed=[]');
+eq(c2.percent, [], '无费用徽章时 percent=[]');
 const c3 = T.classifyBadges(null);
-eq(c3.fixed, null, '非数组输入容错');
+eq(c3.fixed, [], '非数组输入容错');
 
 // ---- classifyBadges：真实站点其他 attributes 形态不误判 ----
 // 采样自站内真实用户徽章库：混沌/卡皮巴拉/捣蛋鬼/马上来/走个面等非评论费用字段
@@ -114,11 +118,12 @@ const REAL_OTHERS = [
   { badge_id: 'u-zhou', badge: { name: '2Libra 一周年！', attributes: null } },
 ];
 const c4 = T.classifyBadges(REAL_OTHERS);
-eq(c4.fixed, null, '非评论费用字段不误判为固定徽章');
-eq(c4.percent, null, 'coin_system_cost_percent 等近似字段不误判为减免徽章');
+eq(c4.fixed, [], '非评论费用字段不误判为固定徽章');
+eq(c4.percent.map((b) => b.badge_id), ['u-mashang'], 'coin_system_cost_percent 计入发评减免（马上来 5%）');
 const c5 = T.classifyBadges([...REAL_OTHERS, PERCENT]);
-eq(c5.percent && c5.percent.badge_id, PERCENT.badge_id, '混杂其他徽章时仍准确识别减免徽章（真实单 percent 用户形态）');
-eq(c5.fixed, null, '真实单 percent 用户 fixed=null');
+eq(c5.percent[0].badge_id, PERCENT.badge_id, '30% 减免排在最前');
+eq(c5.percent.map((b) => b.badge_id).includes('u-mashang'), true, '低比例减免仍保留在候选池');
+eq(c5.fixed, [], '真实库无固定扣费徽章');
 
 // ---- 「走个面」快捷开关：只认活跃度徽章，且绝不进入费用推荐 ----
 // 站点徽章库：id do_me_a_favor / 名称「走个面」/ 佩戴属性「活跃度增加提升 20%」
@@ -134,140 +139,136 @@ eq(T.findActivityBadge([{ badge_id: 'zou-cat', badge: { id: 'do_me_a_favor', nam
 const ZOU_ID_ONLY = { id: 'zou-id-only', badge: { id: 'zou-id-only', name: '走个面', attributes: { daily_active_gain_percent: 0.2 } } };
 eq(T.findActivityBadge([ZOU_ID_ONLY]).badge_id, 'zou-id-only', 'badge.id 归一化为 badge_id');
 eq(T.findActivityBadge([{ badge: { name: '走个面', attributes: { daily_active_gain_percent: 0.2 } } }]), null, '缺 badge_id 的条目无法佩戴，忽略');
-eq(T.classifyBadges([ZOU]).fixed, null, '走个面不会被当成固定费用徽章');
-eq(T.classifyBadges([ZOU]).percent, null, '走个面不会被当成减免徽章');
+eq(T.classifyBadges([ZOU]).fixed, [], '走个面不会被当成固定费用徽章');
+eq(T.classifyBadges([ZOU]).percent, [], '走个面不会被当成减免徽章');
 eq(T.activityGain(ZOU), 20, 'daily_active_gain_percent 0.2 → 20%');
 eq(T.activityGain({ badge: { attributes: { daily_active_gain_percent: 20 } } }), 20, '百分数形态 20 → 20%');
 eq(T.activityGain({ badge: { attributes: {} } }), null, '缺 active 属性返回 null');
 eq(T.activityGain(PLAIN), null, '普通徽章没有活跃度加成');
-eq(T.activityLabel(ZOU, false), '佩戴走个面 活跃度 +20%', '未佩戴时按钮显示名字与加成');
-eq(T.activityLabel(ZOU, false, true), '走个面 +20%', '窄屏使用短文案');
-eq(T.activityLabel(ZOU, true, true), '✓ 走个面 +20%', '窄屏保留佩戴状态');
-eq(T.activityLabel(ZOU, true), '✓ 走个面 活跃度 +20%', '佩戴时按钮加勾');
-eq(T.activityLabel({ badge: { name: '走个面', attributes: null } }, false), '佩戴走个面 活跃度加成', '属性缺失时降级文案');
+eq(T.activityLabel(ZOU, false), '走个面 +20%', '未佩戴：只显示徽章名与加成');
+eq(T.activityLabel(ZOU, true), '✓ 走个面 +20%', '佩戴时按钮加勾');
+eq(T.activityLabel({ badge: { name: '走个面', attributes: null } }, false), '走个面', '属性缺失时只显示名字');
 eq(/function toggleActivityBadge\(/.test(src), true, '提供走个面一键佩戴/摘下入口');
 eq(/bar\.__activityBtn/.test(src), true, '状态栏持有独立的走个面按钮');
 eq(/margin-right:auto/.test(src), true, '走个面入口固定在状态栏最左侧');
 
-// ---- classifyBadges：同类多枚保留更省的一枚 ----
+// ---- classifyBadges：同类多枚全部保留并按优惠力度排序 ----
 const FIXED2 = { badge_id: 'fixed-2', badge: { name: '固定贵', attributes: { comment_cost: -12 } } };
 const PERCENT2 = { badge_id: 'percent-2', badge: { name: '减免少', attributes: { comment_cost_percent: 0.1 } } };
 const c6 = T.classifyBadges([FIXED2, FIXED, PERCENT2, PERCENT]);
-eq(c6.fixed && c6.fixed.badge_id, FIXED.badge_id, '多枚固定徽章取扣费更低的');
-eq(c6.percent && c6.percent.badge_id, PERCENT.badge_id, '多枚减免徽章取减免更多的');
+eq(c6.fixed.map((b) => b.badge_id), [FIXED.badge_id, FIXED2.badge_id], '固定徽章按扣费从低到高');
+eq(c6.percent.map((b) => b.badge_id), [PERCENT.badge_id, PERCENT2.badge_id], '减免徽章按减免从高到低');
 
 // ---- classifyBadges：条目只有 badge.id 时归一化成 badge_id ----
-// /api/badges/my 若返回 {id, badge:{id}} 形态，切换请求不能发出 badge_id: undefined
 const ID_ONLY = { id: 'id-only', badge: { id: 'id-only', name: '都听我说！', attributes: { comment_cost_percent: 0.3 } } };
 const cId = T.classifyBadges([FIXED, ID_ONLY]);
-eq(cId.percent && cId.percent.badge_id, 'id-only', 'badge.id 归一化为 badge_id');
-eq(T.currentCostBadge(cId, new Set(['id-only'])).badge_id, 'id-only', '归一化后可匹配佩戴状态');
+eq(cId.percent[0].badge_id, 'id-only', 'badge.id 归一化为 badge_id');
+eq(T.wornCostBadges(cId, new Set(['id-only']))[0].badge_id, 'id-only', '归一化后可匹配佩戴状态');
 const mIdOnly = T.barModel(20, cId, new Set([FIXED.badge_id]));
-eq(mIdOnly.target && mIdOnly.target.badge_id, 'id-only', '归一化后仍能给出切换目标');
+eq(mIdOnly.actions[0] && mIdOnly.actions[0].badge.badge_id, 'id-only', '归一化后仍能给出切换目标');
 
-// ---- recommend：盈亏平衡点在 100 字 ----
-const PAIR = { fixed: FIXED, percent: PERCENT };
-eq(T.recommend(0, PAIR).badge_id, PERCENT.badge_id, '0 字推荐减免徽章');
-eq(T.recommend(100, PAIR).badge_id, PERCENT.badge_id, '100 字推荐减免徽章（7 < 8）');
-eq(T.recommend(101, PAIR).badge_id, FIXED.badge_id, '101 字推荐固定徽章（8 < 21）');
-eq(T.recommend(4000, PAIR).badge_id, FIXED.badge_id, '长文本推荐固定徽章');
-eq(T.recommend(80, { fixed: FIXED, percent: null }).badge_id, FIXED.badge_id, '只有固定徽章时推荐它');
-eq(T.recommend(80, { fixed: null, percent: null }), null, '两类都缺时返回 null');
-// 候选比不戴还贵时不推荐（当前站点无此数据，防御未来徽章）
-eq(T.recommend(80, { fixed: FIXED2, percent: null }), null, '唯一候选贵于基础费用时不推荐');
-eq(T.recommend(80, { fixed: FIXED2, percent: PERCENT }).badge_id, PERCENT.badge_id, '贵候选让位给省的');
+// ---- costBadges / optimalBadges ----
+const PAIR = T.classifyBadges([FIXED, PERCENT]);
+eq(T.costBadges(PAIR).length, 2, '候选池包含两类徽章');
+eq(T.optimalBadges(0, PAIR).map((b) => b.badge_id), [PERCENT.badge_id], '0 字最优是 30% 减免');
+eq(T.optimalBadges(100, PAIR).map((b) => b.badge_id), [PERCENT.badge_id], '100 字 7 < 8');
+eq(T.optimalBadges(101, PAIR).map((b) => b.badge_id), [FIXED.badge_id], '101 字最优是固定 8');
+eq(T.optimalBadges(4000, PAIR).map((b) => b.badge_id), [FIXED.badge_id], '长文本最优是固定徽章');
+const PAIR_F = T.classifyBadges([FIXED]);
+eq(T.optimalBadges(80, PAIR_F).map((b) => b.badge_id), [FIXED.badge_id], '只有固定徽章时推荐它');
+eq(T.optimalBadges(80, { fixed: [], percent: [] }), [], '两类都缺时无最优解');
+eq(T.optimalBadges(80, T.classifyBadges([FIXED2])), [], '唯一候选贵于基础费用时无最优解');
+const PAIR_G = T.classifyBadges([FIXED, PERCENT, GRAND]);
+eq(T.optimalBadges(80, PAIR_G).length, 2, '两枚 30% 徽章同时进入最优解');
 
-// ---- currentCostBadge ----
-eq(T.currentCostBadge(PAIR, new Set([FIXED.badge_id])).badge_id, FIXED.badge_id, '当前佩戴固定徽章');
-eq(T.currentCostBadge(PAIR, new Set(['other'])), null, '佩戴其他徽章时为 null');
-
-// ---- barModel：各场景文案与告警 ----
+// ---- barModel：各场景文案与动作 ----
 const m1 = T.barModel(85, PAIR, new Set([PERCENT.badge_id]));
 eq(m1.count, '85 字', '字数展示');
 eq(m1.status, '当前：都听我说！ · 发评约 7 金币', '佩戴减免时状态文案');
 eq(m1.hint, '✓ 当前最省', '已是最省时提示');
 eq(m1.warn, false, '短文本不告警');
-eq(m1.target, null, '已是最省时无切换目标');
+eq(m1.actions, [], '已是最省且没有同价徽章时无动作');
 
 const m2 = T.barModel(85, PAIR, new Set([FIXED.badge_id]));
 eq(m2.warn, false, '短文本戴固定徽章不告警');
 eq(m2.hint, '可省 1 金币', '短文本切减免可省 1 金币');
-eq(m2.btn, '切换「都听我说！」（7 金币）', '切换按钮文案');
-eq(m2.target && m2.target.badge_id, PERCENT.badge_id, '切换目标为减免徽章');
+eq(m2.actions[0].label, '都听我说！ 7 金币', '切换按钮只留徽章名 + 费用');
+eq(m2.actions[0].badge.badge_id, PERCENT.badge_id, '切换目标为减免徽章');
 
 const m3 = T.barModel(120, PAIR, new Set([PERCENT.badge_id]));
 eq(m3.warn, true, '超 100 字戴减免徽章触发告警');
 eq(m3.hint, '⚠️ 减免 30% 不如固定 8 金币', '告警文案按徽章真实比例生成');
-eq(m3.btn, '切换「前排打手」（8 金币）', '快捷切换到固定徽章');
+eq(m3.actions[0].label, '前排打手 8 金币', '快捷切换到固定徽章');
 
 const m4 = T.barModel(120, PAIR, new Set([FIXED.badge_id]));
 eq(m4.warn, false, '超 100 字戴固定徽章不告警');
 eq(m4.hint, '✓ 当前最省', '固定徽章长文本最优');
+eq(m4.actions, [], '最优且无同价徽章时无按钮');
 
 const m5 = T.barModel(60, PAIR, new Set([PLAIN.badge_id]));
-eq(m5.status, '当前：未佩戴费用徽章 · 发评约 10 金币', '佩戴普通徽章走基础费用');
-eq(m5.btn, '切换「都听我说！」（7 金币）', '推荐切到减免徽章');
+eq(m5.status, '当前：未佩戴 · 发评约 10 金币', '佩戴普通徽章走基础费用');
+eq(m5.actions[0].label, '都听我说！ 7 金币', '推荐切到减免徽章');
 
-const m6 = T.barModel(60, { fixed: null, percent: null }, new Set());
-eq(m6.status, '当前：未佩戴费用徽章 · 发评约 10 金币', '无徽章数据时仍展示基础费用');
-eq(m6.target, null, '无徽章数据时无切换目标');
+const m6 = T.barModel(60, { fixed: [], percent: [] }, new Set());
+eq(m6.status, '当前：未佩戴 · 发评约 10 金币', '无徽章数据时仍展示基础费用');
+eq(m6.actions, [], '无徽章数据时无动作');
 eq(m6.hint, '', '两枚费用徽章都缺时不误报「当前最省」');
 eq(m6.warn, false, '两枚费用徽章都缺时不告警');
 
+// ---- 同价并重：戴着 A 时 B 仍作为同价替换展示 ----
+const mPeerP = T.barModel(85, PAIR_G, new Set([PERCENT.badge_id]));
+eq(mPeerP.hint, '✓ 当前最省', '戴都听我说已是同价最优');
+eq(mPeerP.actions.map((a) => a.label), ['大平衡者 7 金币'], '右侧仍给出同价的大平衡者');
+const mPeerG = T.barModel(85, PAIR_G, new Set([GRAND.badge_id]));
+eq(mPeerG.actions.map((a) => a.label), ['都听我说！ 7 金币'], '戴大平衡者时右侧给出都听我说');
+const mPair = T.barModel(85, PAIR_G, new Set());
+eq(mPair.actions.map((a) => a.label), ['都听我说！ 7 金币', '大平衡者 7 金币'], '未佩戴时两枚并排');
+
 // ---- 动态文案：不再写死「减免 30%」「超 100 字」 ----
-// 站点真实徽章库还有 10%（种子用户）/ 15%（六边形战士）/ 30%（大平衡者）等档位
 const P10 = { badge_id: 'percent-10', badge: { name: '种子用户', attributes: { comment_cost_percent: 0.1 } } };
 const P15 = { badge_id: 'percent-15', badge: { name: '六边形战士', attributes: { comment_cost_percent: 0.15 } } };
-const m10 = T.barModel(120, { fixed: FIXED, percent: P10 }, new Set([P10.badge_id]));
+const m10 = T.barModel(120, T.classifyBadges([FIXED, P10]), new Set([P10.badge_id]));
 eq(m10.hint, '⚠️ 减免 10% 不如固定 8 金币', '10% 徽章按真实比例提示');
-eq(m10.btn, '切换「前排打手」（8 金币）', '10% 徽章切到固定徽章');
+eq(m10.actions[0].label, '前排打手 8 金币', '10% 徽章切到固定徽章');
 eq(m10.warn, true, '10% 徽章超长时告警');
-const m15 = T.barModel(150, { fixed: FIXED, percent: P15 }, new Set([P15.badge_id]));
+const m15 = T.barModel(150, T.classifyBadges([FIXED, P15]), new Set([P15.badge_id]));
 eq(m15.hint, '⚠️ 减免 15% 不如固定 8 金币', '15% 徽章按真实比例提示');
-// 10% 徽章 50 字时 9 > 8 已经不划算，不该只在 >100 字才提醒
-const m10s = T.barModel(50, { fixed: FIXED, percent: P10 }, new Set([P10.badge_id]));
+const m10s = T.barModel(50, T.classifyBadges([FIXED, P10]), new Set([P10.badge_id]));
 eq(m10s.warn, true, '10% 徽章 50 字已不划算也告警');
-eq(m10s.target && m10s.target.badge_id, FIXED.badge_id, '10% 徽章 50 字应切到固定徽章');
-// 加价徽章（comment_cost_percent 为负）不推荐、不误报最省
+eq(m10s.actions[0].badge.badge_id, FIXED.badge_id, '10% 徽章 50 字应切到固定徽章');
 const P_NEG = { badge_id: 'percent-neg', badge: { name: '夜猫', attributes: { comment_cost_percent: -0.2 } } };
-eq(T.recommend(50, { fixed: null, percent: P_NEG }), null, '加价徽章不推荐');
-const mNeg = T.barModel(50, { fixed: null, percent: P_NEG }, new Set([P_NEG.badge_id]));
+const mNeg = T.barModel(50, T.classifyBadges([P_NEG]), new Set([P_NEG.badge_id]));
 eq(mNeg.warn, true, '戴着加价徽章要告警');
-eq(mNeg.target, null, '加价徽章不给切换目标');
+eq(mNeg.hint, '⚠️ 比不戴贵 2 金币', '加价徽章提示实际差价');
+eq(mNeg.actions, [], '加价徽章不提供动作按钮');
 
-// ---- 同价并列：不再给「可省 0 金币」的无意义按钮 ----
+// ---- 同价并列：另一枚作为替换展示 ----
 const F7 = { badge_id: 'fixed-7', badge: { name: '固定7', attributes: { comment_cost: -7 } } };
-const mTie = T.barModel(50, { fixed: F7, percent: PERCENT }, new Set([PERCENT.badge_id]));
+const mTie = T.barModel(50, T.classifyBadges([F7, PERCENT]), new Set([PERCENT.badge_id]));
 eq(mTie.hint, '✓ 当前最省', '同价视为已最省');
-eq(mTie.target, null, '同价无切换目标');
-eq(mTie.btn, '', '同价无切换按钮');
+eq(mTie.actions.map((a) => a.label), ['固定7 7 金币'], '同价另一枚作为替换展示');
 eq(mTie.warn, false, '同价不告警');
 
-// ---- 比不戴更贵：给出「摘下」动作，而不是无路可走 ----
-// 复用上面的 FIXED2（固定 12 金币），50 字基础只需 10 金币
-const mBad = T.barModel(50, { fixed: FIXED2, percent: null }, new Set([FIXED2.badge_id]));
-eq(mBad.unequip && mBad.unequip.badge_id, FIXED2.badge_id, '比不戴更贵时给出摘下目标');
+// ---- 比不戴更贵：只提醒，不再提供摘下 ----
+const mBad = T.barModel(50, T.classifyBadges([FIXED2]), new Set([FIXED2.badge_id]));
 eq(mBad.warn, true, '比不戴更贵时告警');
-eq(mBad.target, null, '摘下时不给切换目标');
-eq(mBad.btn, '摘下「固定贵」（省 2 金币）', '摘下按钮文案');
-// 同价（站点「篝火」恒定 10 金币）不算更贵，也不建议摘下
+eq(mBad.hint, '⚠️ 比不戴贵 2 金币', '比不戴更贵的提示');
+eq(mBad.actions, [], '不再提供摘下动作');
 const F10 = { badge_id: 'fixed-10', badge: { name: '篝火', attributes: { comment_cost: -10 } } };
-const mEq = T.barModel(50, { fixed: F10, percent: null }, new Set([F10.badge_id]));
-eq(mEq.unequip, null, '同价徽章不建议摘下');
+const mEq = T.barModel(50, T.classifyBadges([F10]), new Set([F10.badge_id]));
 eq(mEq.hint, '✓ 当前最省', '同价徽章视为最省');
+eq(mEq.actions, [], '同价徽章无动作');
 
 // ---- 无徽章用户：官方分段税全档文案（超 100/1000/2000/5000 → 30/60/120/200） ----
-const NO_BADGE = { fixed: null, percent: null };
+const NO_BADGE = { fixed: [], percent: [] };
 for (const [len, cost] of [[60, 10], [100, 10], [101, 30], [1000, 30], [1001, 60], [2001, 120], [5001, 200]]) {
   const m = T.barModel(len, NO_BADGE, new Set());
-  eq(m.status, `当前：未佩戴费用徽章 · 发评约 ${cost} 金币`, `无徽章 ${len} 字显示分段税 ${cost}`);
-  eq(m.btn, '', `无徽章 ${len} 字无切换按钮`);
-  eq(m.target, null, `无徽章 ${len} 字无切换目标`);
+  eq(m.status, `当前：未佩戴 · 发评约 ${cost} 金币`, `无徽章 ${len} 字显示分段税 ${cost}`);
+  eq(m.actions, [], `无徽章 ${len} 字无动作按钮`);
   eq(m.warn, false, `无徽章 ${len} 字不告警`);
 }
-// 无徽章用户佩戴着其他普通徽章：同样按分段税计算
 const m7 = T.barModel(3000, NO_BADGE, new Set([PLAIN.badge_id]));
-eq(m7.status, '当前：未佩戴费用徽章 · 发评约 120 金币', '佩戴普通徽章不影响分段税');
+eq(m7.status, '当前：未佩戴 · 发评约 120 金币', '佩戴普通徽章不影响分段税');
 
 // ---- jwtDecode ----
 const jwt = 'aaa.' +
@@ -345,6 +346,28 @@ eq(/flex:0 0 auto/.test(T.barTextCss('count')), true, '字数不参与收缩');
 eq(/bar\.__editor = editor/.test(src), true, '状态栏记录归属的编辑器，已存在时复用');
 eq(/editor\.parentNode !== bar\.parentNode/.test(src), true, '只在归属编辑器被摘走时才回收状态栏');
 
+// ---- 预览页必须与 user.js 同步：node build-preview.js ----
+const previewHtml = fs.readFileSync(path.join(__dirname, 'preview.html'), 'utf8');
+const previewScript = previewHtml.slice(previewHtml.indexOf('<script>') + '<script>'.length, previewHtml.lastIndexOf('</script>'));
+const between = (text, start, end) => {
+  const a = text.indexOf(start);
+  if (a < 0) return '';
+  const lineEnd = text.indexOf('\n', a);
+  const b = text.indexOf(end, lineEnd);
+  if (lineEnd < 0 || b < 0) return '';
+  return text.slice(lineEnd + 1, b);
+};
+const userLogic = src.slice(
+  src.indexOf('  function baseCost'),
+  src.indexOf('  // ---------- 工具（纯函数，供测试） ----------'),
+);
+const previewLogic = between(previewScript, '// ==== SHARED LOGIC START', '// ==== SHARED LOGIC END');
+eq(previewLogic.trim() === userLogic.trim(), true, 'preview 共享逻辑与 user.js 同步（运行 node build-preview.js）');
+const cssAt = src.indexOf('style.textContent = `');
+const userCss = src.slice(cssAt + 'style.textContent = `'.length, src.indexOf('`;', cssAt));
+const previewCss = between(previewScript, '/* ==== BAR CSS START', '/* ==== BAR CSS END');
+eq(previewCss.trim() === userCss.trim(), true, 'preview 工具栏样式与 user.js 同步（运行 node build-preview.js）');
+
 // ---- readCookie ----
 globalThis.document.cookie = 'a=1; access_token=TOK; refresh_token=R';
 eq(T.readCookie('access_token'), 'TOK', '读取 access_token');
@@ -417,9 +440,7 @@ eq(T.pandoraEffect(null, NOW).active, false, '无盒子不生效');
 const PE_DROP = fx();
 const mLock = T.barModel(50, PAIR, new Set([PERCENT.badge_id]), PE_DROP);
 eq(mLock.warn, true, '回归起点生效时告警');
-eq(mLock.target, null, '回归起点不给切换目标');
-eq(mLock.unequip, null, '回归起点不给摘下目标');
-eq(mLock.btn, '', '回归起点无动作按钮');
+eq(mLock.actions, [], '回归起点无动作按钮');
 eq(mLock.status.includes('回归起点'), true, '状态栏标注事件名');
 eq(mLock.status.includes('锁定'), true, '状态栏说明徽章已锁定');
 eq(mLock.status.includes('11-03 09:07'), true, '状态栏展示本地截止时间');
@@ -427,47 +448,53 @@ eq(mLock.status.includes('11-03 09:07'), true, '状态栏展示本地截止时�
 const PE_FIXED = fx({ event_code: 'fixed_text_cost', event_name: '妙笔生花', event_title: '发帖和评论的金币费用固定为 6 金币。', rolled_value: 6 });
 const mFixed = T.barModel(5000, PAIR, new Set([FIXED.badge_id]), PE_FIXED);
 eq(mFixed.status, '潘多拉「妙笔生花」生效中 · 发评固定 6 金币', '妙笔生花固定费用文案');
-eq(mFixed.target, null, '妙笔生花生效时不切徽章');
+eq(mFixed.actions, [], '妙笔生花生效时不切徽章');
 eq(mFixed.warn, false, '妙笔生花不告警');
 
 const PE_FREE = fx({ event_code: 'comment_min_length', event_name: '多说多写', event_title: '评论回复只能输入 10 个字以上。有失有得，生效期间，评论不扣除金币。', rolled_value: 10 });
 const mFree = T.barModel(50, PAIR, new Set([FIXED.badge_id]), PE_FREE);
 eq(mFree.status, '潘多拉「多说多写」生效中 · 发评 0 金币', 'gold 多说多写免费发评');
 eq(mFree.hint, '✓ 生效期间评论不扣金币（需 ≥10 字）', '免费发评同时提示字数约束');
-eq(mFree.target, null, '免费发评时不切徽章');
+eq(mFree.actions, [], '免费发评时不切徽章');
 
-// 金币升降机：徽章照常参与推荐，但展示金额乘算（乘法同缩放，谁更省的结论不变）
+// 金币升降机：评论消费类事件优先，徽章不叠加
 const PE_MOD = fx({ event_code: 'coin_modifier_percent', event_name: '金币升降机', event_title: '大部分金币变动 -17%，收益少一点，花费也少一点。', rolled_value: -17 });
 const mMod0 = T.barModel(50, PAIR, new Set([FIXED.badge_id]), PE_MOD);
-eq(mMod0.status, '当前：前排打手 · 发评约 7 金币', '金币升降机 -17%：固定 8×0.83 = 6.64 → 7');
-eq(mMod0.btn, '切换「都听我说！」（6 金币）', '切换按钮金额按乘算展示：减免 7×0.83 = 5.81 → 6');
-eq(mMod0.hint, '可省 1 金币 · 潘多拉金币变动 -17% 已计入', '升降机提示拼接在徽章提示后');
+eq(mMod0.status, '潘多拉「金币升降机」生效中 · 11-03 09:07 截止 · 发评约 8 金币', '升降机 -17%：10×0.83 = 8.3 → 8，徽章不叠加');
+eq(mMod0.hint, '徽章不叠加：发评费用按事件计算', '升降机提示徽章不叠加');
+eq(mMod0.actions, [], '升降机生效时不切徽章');
 const mMod3 = T.barModel(120, PAIR, new Set([PERCENT.badge_id]), PE_MOD);
-eq(mMod3.status, '当前：都听我说！ · 发评约 17 金币', '减免 21×0.83 = 17.43 → 17');
-eq(mMod3.hint, '⚠️ 减免 30% 不如固定 7 金币 · 潘多拉金币变动 -17% 已计入', '告警文案金额同样乘算');
-// +40%：减免 30% 的 7 金币 → 10
+eq(mMod3.status, '潘多拉「金币升降机」生效中 · 11-03 09:07 截止 · 发评约 25 金币', '升降机 -17%：30×0.83 = 24.9 → 25');
 const PE_MOD_UP = fx({ event_code: 'coin_modifier_percent', event_name: '金币升降机', event_title: '大部分金币变动 +40%，收益多一点，花费也多一点。', rolled_value: 40 });
 const mModUp = T.barModel(80, PAIR, new Set([PERCENT.badge_id]), PE_MOD_UP);
-eq(mModUp.status, '当前：都听我说！ · 发评约 10 金币', '金币升降机 +40%：7×1.4 = 9.8 → 10');
-eq(mModUp.hint, '✓ 当前最省 · 潘多拉金币变动 +40% 已计入', '最优状态也标注升降机');
+eq(mModUp.status, '潘多拉「金币升降机」生效中 · 11-03 09:07 截止 · 发评约 14 金币', '升降机 +40%：10×1.4 = 14');
+eq(mModUp.actions, [], '升降机生效时不切徽章');
 
-// 字数/表情约束未满足 → 告警并提示（徽章逻辑照常）
+// 多说多写：只校验字数，徽章不参与
 const PE_MIN = fx({ event_code: 'comment_min_length', event_name: '多说多写', event_title: '评论回复只能输入 10 个字以上。', rolled_value: 10 });
 const mMin = T.barModel(5, PAIR, new Set([PERCENT.badge_id]), PE_MIN);
-eq(mMin.warn, true, '字数不足潘多拉约束时告警');
-eq(mMin.hint, '✓ 当前最省 · 潘多拉要求 ≥10 字', '字数约束提示拼接在徽章提示后');
+eq(mMin.count, '5/10 字', '多说多写显示字数/门槛');
+eq(mMin.status, '潘多拉「多说多写」生效中 · 需 ≥10 字', '多说多写只标注字数门槛');
+eq(mMin.hint, '⚠️ 还差 5 字才能发送（需 ≥10 字）', '未达字数给出发送门槛提示');
+eq(mMin.warn, true, '字数不足告警');
+eq(mMin.actions, [], '多说多写不展示徽章切换');
+const mMinOk = T.barModel(50, PAIR, new Set([PERCENT.badge_id]), PE_MIN);
+eq(mMinOk.hint, '✓ 已满足 10 字，可以发送', '达到字数后提示可以发送');
+eq(mMinOk.actions, [], '多说多写不展示徽章切换');
+
 const PE_EMOJI = fx({ event_code: 'comment_custom_emoji_required', event_name: '小表情', event_title: '评论需要包含至少一个自定义表情。', rolled_value: null });
 const mEmoji = T.barModel(50, PAIR, new Set([PERCENT.badge_id]), PE_EMOJI);
 eq(mEmoji.hint, '✓ 当前最省 · 潘多拉要求包含自定义表情', '自定义表情约束提示');
+eq(mEmoji.actions, [], '小表情不改变徽章动作');
 
-// 与事件无关的头像/金币雨类事件：徽章逻辑原样，仅按需展示（无额外字段则无拼接）
+// 与事件无关的头像类事件：徽章逻辑原样
 const PE_AVATAR = fx({ event_code: 'avatar_flip', event_name: '颠倒了！', event_title: '你的头像颠倒了 24 小时。', rolled_value: 1 });
 const mAvatar = T.barModel(85, PAIR, new Set([PERCENT.badge_id]), PE_AVATAR);
 eq(mAvatar.hint, '✓ 当前最省', '头像类事件不影响徽章提示');
 
 // 旧调用形态（不传 pandora）不受影响
 const mLegacy = T.barModel(85, PAIR, new Set([PERCENT.badge_id]));
-eq(mLegacy.hint, '✓ 当前最省', '不传潘多拉参数时行为与旧版一致');
+eq(mLegacy.hint, '✓ 当前最省', '不传潘多拉参数时行为一致');
 
 // ---- fmtTime ----
 eq(T.fmtTime('2026-11-03T01:07:17.249Z'), '11-03 09:07', '截止时间转本地（UTC+8）展示');
@@ -589,4 +616,4 @@ document.querySelectorAll = originalQuery;
 })().catch((error) => { console.error(error); process.exit(1); });
 
 // 未佩戴且只持有固定费用徽章时，正常给出推荐。
-eq(T.barModel(36, {fixed: FIXED, percent: null}, new Set()).target.badge_id, FIXED.badge_id, '单固定费用徽章且未佩戴时不崩溃');
+eq(T.barModel(36, T.classifyBadges([FIXED]), new Set()).actions[0].badge.badge_id, FIXED.badge_id, '单固定费用徽章且未佩戴时不崩溃');
