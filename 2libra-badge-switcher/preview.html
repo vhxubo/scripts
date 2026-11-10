@@ -7,7 +7,7 @@
 *{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--color-base-content);font:14px/1.7 "PingFang SC","Microsoft YaHei",sans-serif}main{max-width:1280px;margin:auto;padding:40px 28px 70px}header{border-left:5px solid var(--color-primary);padding-left:22px;margin-bottom:30px}.eyebrow{font:12px/1.5 ui-monospace,monospace;letter-spacing:2px;color:var(--muted)}h1{font:600 clamp(26px,4vw,44px)/1.3 "Songti SC",SimSun,serif;margin:10px 0}p{margin:8px 0;color:var(--muted)}h2{font-size:19px;margin:26px 0 12px}button,select,input{font:inherit}button,select{border:1px solid var(--color-base-300);background:var(--color-base-100);color:inherit;border-radius:6px;padding:6px 12px}button{cursor:pointer}button:hover{border-color:var(--color-primary)}button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0}.controls label{display:flex;gap:6px;align-items:center;color:var(--muted)}.stage,.sample{background:var(--color-base-100);border:1px solid var(--color-base-300);border-radius:10px;padding:18px;min-width:0}.editor{border:1px solid var(--color-base-300);border-radius:5px;overflow:hidden}.editor-tools{padding:5px 12px;background:var(--color-base-200);color:var(--muted);font:12px/1.8 ui-monospace,monospace}textarea{display:block;width:100%;min-height:100px;resize:vertical;border:0;padding:12px;background:var(--color-base-100);color:inherit;font:14px/1.7 inherit}.editor-footer{padding:6px 12px;display:flex;justify-content:space-between;color:var(--muted);font-size:11px;border-top:1px solid var(--color-base-300)}.grid{display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}.sample h3{font-size:14px;margin:0 0 4px}.sample p{font-size:12px;margin:0 0 14px}.sample .editor textarea{min-height:58px;height:58px}.viewport{max-width:100%;margin:auto;transition:width .15s}.sample-body{max-width:100%}.sample .summary{margin:10px 0 0;font-size:12px;color:var(--muted);overflow-wrap:anywhere}.tag{color:var(--color-primary);font:11px ui-monospace,monospace;margin-right:8px}.section-intro{display:flex;justify-content:space-between;gap:12px;align-items:center}.note{font-size:12px}dialog{width:min(920px,94vw);border:1px solid var(--color-base-300);border-radius:12px;background:var(--color-base-100);color:var(--color-base-content);padding:22px}dialog::backdrop{background:#102c3688}footer{margin-top:28px;color:var(--muted);font-size:12px}@media(max-width:600px){main{padding:24px 12px}.stage,.sample{padding:12px}.controls{gap:8px}.controls label{flex-wrap:wrap}header{padding-left:14px}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 <main>
-<header><div class="eyebrow">2LIBRA / BADGE SWITCHER / v1.6.5 · 大平衡者预览</div><h1>每一种状态，都在这里。</h1><p>评论金币徽章助手效果预览 · 只展示当前字数下的最优解；并重徽章并排两个按钮二选一。</p></header>
+<header><div class="eyebrow">2LIBRA / BADGE SWITCHER / v1.6.5 · 大平衡者预览</div><h1>每一种状态，都在这里。</h1><p>评论金币徽章助手效果预览 · 只展示当前字数下的最优解；并重徽章并排两个按钮二选一，戴其中一枚时另一枚仍可同价替换。</p></header>
 <div class="controls"><button id="theme">切换深色</button><button id="open-dialog">打开帖子弹窗</button><button id="reset">重置演示</button><span class="note">离线演示，操作仅修改本页模拟状态。</span></div>
 <h2>交互试用</h2>
 <div class="stage"><div class="controls">
@@ -18,7 +18,7 @@
 <div class="viewport" id="live"></div><p class="note">点击「走个面」体验佩戴／摘下进度。悬停工具条可查看完整提示。</p></div>
 <div class="section-intro"><h2>完整状态样本</h2><span class="note" id="sample-count"></span></div>
 <p class="note">每个样本独立；文字可编辑，按钮可操作。下方说明保留工具条被截断的完整信息。</p><div class="grid" id="samples"></div>
-<footer>工具条样式、费用模型与渲染逻辑均内置在本页（含「大平衡者」并重、同价替换与最优解按钮）；示例数据与操作均为本地模拟，不访问真实 API。</footer>
+<footer>工具条样式、费用模型与渲染逻辑均内置在本页（含「大平衡者」并重、同价替换、最优解按钮，以及潘多拉评论消费事件优先）；示例数据与操作均为本地模拟，不访问真实 API。</footer>
 </main>
 <dialog id="post-dialog"><div class="controls"><strong>帖子弹窗 · 评论区</strong><button id="close-dialog">关闭</button></div><p>模拟列表页打开帖子后的评论工具条。关闭再打开可保留内容和状态。</p><div id="dialog-editor"></div></dialog>
 <script>
@@ -179,7 +179,7 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
   // 每个盒子只携带一个事件，因此各标志互斥；未生效返回 { active: false }
   // - badge_drop_lock 回归起点：徽章全部掉落且锁定，无法佩戴 → 徽章逻辑完全让位
   // - fixed_text_cost 妙笔生花：发评费用固定为 N 金币 → 徽章不参与计费
-  // - comment_min_length 多说多写：gold 档「评论不扣除金币」→ 免费发评；各档要求 ≥N 字
+  // - comment_min_length 多说多写：gold 档「评论不扣除金币」→ 免费发评；各档要求 ≥N 字，未达不能发送
   // - coin_modifier_percent 金币升降机：大部分金币变动 ±N%；
   //   官方 COINS_MODIFIER_IMMUNE_REASONS 豁免清单不含发帖/评论扣费 → 费用估算需乘算
   // - comment_custom_emoji_required 小表情：评论需包含自定义表情
@@ -236,6 +236,8 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
   function barModel(len, p, eq, pand) {
     const base = baseCost(len);
     const pe = pand && pand.active ? pand : null;
+    // 多说多写：未达字数时评论发不出去（不只是提示，属于硬约束）
+    const needMore = pe && pe.minLength && len < pe.minLength ? pe.minLength - len : 0;
     const m = {
       count: `${len} 字`,
       status: '',
@@ -243,6 +245,8 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
       warn: false,
       actions: [],
     };
+    // 字数门槛直接读写数区：36/100 字，窄屏看不到 hint 时也能判断
+    if (pe && pe.minLength) m.count = `${len}/${pe.minLength} 字`;
 
     // 0) 潘多拉事件接管：徽章无法佩戴 / 费用被固定或免除时，不再给任何徽章动作
     if (pe) {
@@ -255,7 +259,12 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
       }
       if (pe.freeComment) {
         m.status = `潘多拉「${pe.name}」生效中 · 发评 0 金币`;
-        m.hint = pe.minLength ? `✓ 生效期间评论不扣金币（需 ≥${pe.minLength} 字）` : '✓ 生效期间评论不扣金币';
+        if (needMore) {
+          m.hint = `⚠️ 还差 ${needMore} 字才能发送（需 ≥${pe.minLength} 字）`;
+          m.warn = true;
+        } else {
+          m.hint = pe.minLength ? `✓ 生效期间评论不扣金币（需 ≥${pe.minLength} 字）` : '✓ 生效期间评论不扣金币';
+        }
         return m;
       }
       if (typeof pe.fixedCost === 'number') {
@@ -263,25 +272,29 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
         m.hint = '潘多拉已固定费用，徽章不参与计算';
         return m;
       }
+      // 金币升降机等「评论消费类」事件：潘多拉优先，徽章不叠加
+      if (pe.code === 'coin_modifier_percent' || typeof pe.modifierPct === 'number') {
+        const pct = typeof pe.modifierPct === 'number' ? pe.modifierPct : 0;
+        const cost = Math.round(base * (1 + pct / 100));
+        m.status = `潘多拉「${pe.name}」生效中${until} · 发评约 ${cost} 金币`;
+        m.hint = '徽章不叠加：发评费用按事件计算';
+        return m;
+      }
     }
-
-    // 金币升降机：对发评扣费按 ±% 乘算（乘法同缩放不改变「哪枚更省」的判断，只影响展示数值）
-    const k = pe && typeof pe.modifierPct === 'number' ? 1 + pe.modifierPct / 100 : 1;
-    const scale = (n) => Math.round(n * k);
 
     const worn = wornCostBadges(p, eq);
     const cur = worn[0] || null;
     const curCost = badgeCost(len, cur);
     m.status = worn.length > 1
       // 站点如何处理多枚费用徽章未知，明确提示估算可能不准
-      ? `当前：${worn.map((b) => b.badge.name).join(' + ')} · 发评约 ${scale(curCost)} 金币（同戴，估算可能不准）`
-      : `当前：${cur ? cur.badge.name : '未佩戴'} · 发评约 ${scale(curCost)} 金币`;
+      ? `当前：${worn.map((b) => b.badge.name).join(' + ')} · 发评约 ${curCost} 金币（同戴，估算可能不准）`
+      : `当前：${cur ? cur.badge.name : '未佩戴'} · 发评约 ${curCost} 金币`;
 
     // 1) 多枚费用徽章同时佩戴：费用叠加方式未知，只提醒，不再提供摘下
     if (worn.length > 1) {
       m.hint = '⚠️ 多枚同戴，估算可能不准';
       m.warn = true;
-      return finishPandora(m, len, pe, k);
+      return finishPandora(m, len, pe);
     }
 
     // 2) 最优解里除去当前佩戴的那枚，剩下的都可以替换：
@@ -289,17 +302,17 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
     const targets = optimalBadges(len, p).filter((b) => !worn.includes(b)).slice(0, 2);
     if (!targets.length) {
       if (cur && curCost > base) {
-        m.hint = `⚠️ 比不戴贵 ${scale(curCost - base)} 金币`;
+        m.hint = `⚠️ 比不戴贵 ${curCost - base} 金币`;
         m.warn = true;
       } else {
         m.hint = cur ? '✓ 当前最省' : '';
       }
-      return finishPandora(m, len, pe, k);
+      return finishPandora(m, len, pe);
     }
 
     // 3) 只给最优解的替换按钮（并重徽章最多两个），比最优更贵的候选不展示
     m.actions = targets.map((b) => {
-      const cost = scale(badgeCost(len, b));
+      const cost = badgeCost(len, b);
       return {
         type: 'switch',
         badge: b,
@@ -315,20 +328,20 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
     } else if (curOff != null && commentDiscount(targets[0]) == null) {
       // 减免输给固定扣费：把「减免 30% 不如固定 8 金币」的原因说清楚
       m.warn = true;
-      m.hint = `⚠️ ${pctText(curOff)} 不如固定 ${scale(targetCost)} 金币`;
+      m.hint = `⚠️ ${pctText(curOff)} 不如固定 ${targetCost} 金币`;
     } else {
-      m.hint = `可省 ${scale(curCost - targetCost)} 金币`;
+      m.hint = `可省 ${curCost - targetCost} 金币`;
     }
-    return finishPandora(m, len, pe, k);
+    return finishPandora(m, len, pe);
   }
 
-  // 徽章分支收尾：叠加潘多拉的费用乘算说明与评论约束提示
-  function finishPandora(m, len, pe, k) {
+  // 徽章分支收尾：费用类潘多拉已在前面接管，这里只叠加字数/表情约束
+  function finishPandora(m, len, pe) {
     if (!pe) return m;
     const tags = [];
-    if (k !== 1) tags.push(`潘多拉金币变动 ${pe.modifierPct > 0 ? '+' : ''}${pe.modifierPct}% 已计入`);
     if (pe.minLength && len < pe.minLength) {
-      tags.push(`潘多拉要求 ≥${pe.minLength} 字`);
+      // 发不出去比省几金币更重要：用发送门槛顶掉徽章提示
+      m.hint = `⚠️ 还差 ${pe.minLength - len} 字才能发送（需 ≥${pe.minLength} 字）`;
       m.warn = true;
     }
     if (pe.needEmoji) tags.push('潘多拉要求包含自定义表情');
@@ -372,7 +385,7 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
       [data-badge-switcher] button:disabled { cursor:wait; opacity:.55; }
       [data-badge-switcher] .badge-count {
         color:var(--badge-ink); font-weight:600; font-size:11px;
-        width:8ch; text-align:right;
+        width:auto; min-width:8ch; text-align:right;
         font-family:ui-monospace,"SFMono-Regular",Consolas,monospace;
       }
       [data-badge-switcher] .badge-status { flex:1 1 auto; }
@@ -625,14 +638,14 @@ function makeRecord(host,opts={}){const r={pair:{fixed:[F],percent:[P,G]},eq:new
 function toggleActivityBadge(){const r=activeRecord;if(!r||r.busy||!r.activity)return;if(r.event.lockBadge){toast('潘多拉锁定中，截止 '+fmtTime(r.event.expireAt),true);return}const removing=r.eq.has('a');operate(r,removing?'摘下中…':'佩戴中…',()=>{removing?r.eq.delete('a'):r.eq=new Set(['a'])},removing?'已摘下「走个面」':'已佩戴「走个面」，活跃度 +20%')}
 function switchTo(target){const r=activeRecord;if(!r||r.event.lockBadge)return;operate(r,'',()=>{r.eq=new Set([target.badge_id])},'已切换为「'+target.badge.name+'」')}
 function operate(r,pending,action,message){if(r.busy)return;r.busy=true;r.pending=pending;paint(r);setTimeout(()=>{if(document.querySelector('#failure').checked)toast('操作失败：模拟网络异常，请重试',true);else{action();toast(message)}r.busy=false;r.pending='';paint(r)},1000)}
-const live=makeRecord(document.querySelector('#live'),{eq:new Set()});activeRecord=live;document.querySelector('#wear').value='none';
+const live=makeRecord(document.querySelector('#live'));activeRecord=live;
 const eventSelect=document.querySelector('#event');for(const [key,[name]]of Object.entries(events)){const o=document.createElement('option');o.value=key;o.textContent=name;eventSelect.append(o)}
 document.querySelector('#wear').onchange=e=>{if(live.busy)return;if(live.event.lockBadge){e.target.value='none';return}live.eq=new Set(e.target.value==='none'?[]:[e.target.value]);paint(live)};
 eventSelect.onchange=e=>{live.event=eventEffect(e.target.value);if(live.event.lockBadge){live.eq.clear();document.querySelector('#wear').value='none'}paint(live)};
 document.querySelector('#width').onchange=e=>document.querySelector('#live').style.width=e.target.value;
 for(const btn of document.querySelectorAll('[data-length]'))btn.onclick=()=>{live.input.value='字'.repeat(Number(btn.dataset.length));paint(live)};
 document.querySelector('#theme').onclick=e=>{const dark=document.documentElement.classList.toggle('dark');e.target.textContent=dark?'切换浅色':'切换深色'};
-document.querySelector('#reset').onclick=()=>{if(live.busy)return;live.eq=new Set();live.event=eventEffect('none');live.input.value='字'.repeat(36);document.querySelector('#wear').value='none';eventSelect.value='none';document.querySelector('#failure').checked=false;paint(live)};
+document.querySelector('#reset').onclick=()=>{if(live.busy)return;live.eq=new Set(['p']);live.event=eventEffect('none');live.input.value='字'.repeat(36);document.querySelector('#wear').value='p';eventSelect.value='none';document.querySelector('#failure').checked=false;paint(live)};
 const cases=[
 ['走个面 · 未佩戴','明确佩戴动作；点击后立即显示进度。',{}],
 ['走个面 · 已佩戴','勾选与浅色底；悬停提示点击摘下。',{eq:new Set(['a'])}],
@@ -652,7 +665,7 @@ const cases=[
 ['只有一枚费用徽章','仍能推荐比不佩戴更省的候选。',{pair:{fixed:[F],percent:[]},eq:new Set()}],
 ['佩戴后反而更贵','费用高于基础阶梯时红字提醒，不再提供摘下。',{pair:{fixed:[badge('costly','高费用徽章',{comment_cost:20})],percent:[]},eq:new Set(['costly'])}],
 ['相同费用','同价时把另一枚展示出来，换不换都是 7 金币。',{pair:{fixed:[badge('equal','固定 7 金币',{comment_cost:7})],percent:[P]},eq:new Set(['equal'])}],
-...Object.keys(events).filter(k=>k!=='none').map(k=>['潘多拉 · '+events[k][0],'事件优先级及评论约束提示。',{event:eventEffect(k),len:36}]),
+...Object.keys(events).filter(k=>k!=='none').map(k=>['潘多拉 · '+events[k][0],(k==='up'||k==='down')?'评论消费类事件优先：徽章不叠加，费用只按事件 ±% 计。':(k==='min'||k==='free')?'多说多写未满 100 字不能发送，字数够了才谈费用。':'事件优先级及评论约束提示。',{event:eventEffect(k),len:36}]),
 ...[100,101,1000,1001,2000,2001,5000,5001].map(n=>['基础费用 · '+n+' 字','无费用徽章时的字数阶梯边界。',{len:n,pair:{fixed:[],percent:[]},eq:new Set(),activity:null}]),
 ['320 px · 短文案','模拟窄屏，隐藏次要提示并保留状态悬停全文。',{width:'320px'}],
 ['375 px · 已佩戴','短文案仍保留勾选与浅色底状态。',{width:'375px',eq:new Set(['a'])}],
