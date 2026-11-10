@@ -325,9 +325,18 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
     }
 
     const bestCost = best ? badgeCost(len, best) : base;
-    // 3) 没有更省的候选、已是最省、或同价（省 0 金币）：不给无意义的切换按钮
+    // 3) 没有更省的候选、已是最省、或同价（省 0 金币）：不给无意义的切换按钮，
+    //    但保留一个摘下出口——用户可能只是不想戴费用徽章
     if (!best || (cur && (best === cur || bestCost >= curCost))) {
       m.hint = cur ? '✓ 当前最省' : '';
+      if (cur) {
+        m.actions = [{
+          type: 'unequip',
+          badge: cur,
+          label: `摘下 ${cur.badge.name}`,
+          title: `摘下「${cur.badge.name}」 · 发评回到 ${scale(base)} 金币`,
+        }];
+      }
       return finishPandora(m, len, pe, k);
     }
 
@@ -675,17 +684,17 @@ const cases=[
 ['未持有走个面','不显示活动按钮。',{activity:null}],
 ['短评论 · 推荐比例减免（大平衡者 / 都听我说）','10 → 7 金币；两枚 30% 同价，同时展示为两个按钮，二选一即可。',{eq:new Set(['f'])}],
 ['长评论 · 推荐固定费用','101 字起，固定 8 金币胜过 30% 减免。',{len:101}],
-['当前最省 · 固定费用','长评论佩戴固定费用徽章，无需切换。',{len:1001,eq:new Set(['f'])}],
-['大平衡者 · 短评论','同为 30% 减免：10 → 7 金币，戴着它就是「当前最省」。',{len:36,eq:new Set(['g'])}],
+['当前最省 · 固定费用','长评论佩戴固定费用徽章，无需切换，可直接摘下。',{len:1001,eq:new Set(['f'])}],
+['大平衡者 · 短评论','同为 30% 减免：10 → 7 金币，戴着它就是「当前最省」，可一键摘下。',{len:36,eq:new Set(['g'])}],
 ['两枚 30% 并重 · 均未佩戴','只列最优解：两枚 30% 各给一个切换按钮，二选一即可。',{len:36,eq:new Set()}],
-['两枚 30% 并重 · 戴都听我说','已戴最优：不再出现另一枚的按钮，也不会劝你切换。',{len:36,eq:new Set(['p'])}],
-['两枚 30% 并重 · 戴大平衡者','已戴最优：按当前佩戴的大平衡者计算 7 金币。',{len:36,eq:new Set(['g'])}],
+['两枚 30% 并重 · 戴都听我说','已戴最优：不出现另一枚的按钮，只保留「摘下」出口。',{len:36,eq:new Set(['p'])}],
+['两枚 30% 并重 · 戴大平衡者','已戴最优：按大平衡者计算 7 金币，可一键摘下。',{len:36,eq:new Set(['g'])}],
 ['大平衡者 · 长评论','101 字起最优解是固定 8 金币，只给固定徽章一个按钮。',{len:101,eq:new Set(['g'])}],
 ['两枚减免同戴','异常状态：提示摘掉多余的一枚，避免费用估算失真。',{len:36,eq:new Set(['p','g'])}],
 ['没有费用徽章','退化为字数与基础阶梯费用。',{pair:{fixed:[],percent:[]},eq:new Set(),activity:null,len:101}],
 ['只有一枚费用徽章','仍能推荐比不佩戴更省的候选。',{pair:{fixed:[F],percent:[]},eq:new Set()}],
 ['佩戴后反而更贵','费用高于基础阶梯时建议摘下。',{pair:{fixed:[badge('costly','高费用徽章',{comment_cost:20})],percent:[]},eq:new Set(['costly'])}],
-['相同费用','同价不展示无意义的切换按钮。',{pair:{fixed:[badge('equal','固定 7 金币',{comment_cost:7})],percent:[P]},eq:new Set(['equal'])}],
+['相同费用','同价不展示无意义的切换按钮，只保留摘下。',{pair:{fixed:[badge('equal','固定 7 金币',{comment_cost:7})],percent:[P]},eq:new Set(['equal'])}],
 ...Object.keys(events).filter(k=>k!=='none').map(k=>['潘多拉 · '+events[k][0],'事件优先级及评论约束提示。',{event:eventEffect(k),len:36}]),
 ...[100,101,1000,1001,2000,2001,5000,5001].map(n=>['基础费用 · '+n+' 字','无费用徽章时的字数阶梯边界。',{len:n,pair:{fixed:[],percent:[]},eq:new Set(),activity:null}]),
 ['320 px · 短文案','模拟窄屏，隐藏次要提示并保留状态悬停全文。',{width:'320px'}],
