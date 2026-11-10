@@ -14,7 +14,7 @@
 <label>费用徽章 <select id="wear"><option value="p">都听我说！ · 减免 30%</option><option value="g">大平衡者 · 减免 30%（大部分操作）</option><option value="f">前排打手 · 固定 8 金币</option><option value="none">未佩戴</option></select></label>
 <label>潘多拉 <select id="event"></select></label><label>宽度 <select id="width"><option value="100%">跟随页面</option><option value="620px">620 px</option><option value="375px">375 px</option><option value="320px">320 px</option></select></label>
 <label><input id="failure" type="checkbox">模拟请求失败</label></div>
-<div class="controls"><span class="note">填入字数</span><button data-length="36">36</button><button data-length="101">101</button><button data-length="1001">1001</button><button data-length="2001">2001</button><button data-length="5001">5001</button><span class="note">聚焦评论框后 Alt+B 切换省金币徽章</span></div>
+<div class="controls"><span class="note">填入字数</span><button data-length="36">36</button><button data-length="101">101</button><button data-length="1001">1001</button><button data-length="2001">2001</button><button data-length="5001">5001</button></div>
 <div class="viewport" id="live"></div><p class="note">点击「走个面」体验佩戴／摘下进度。悬停工具条可查看完整提示。</p></div>
 <div class="section-intro"><h2>完整状态样本</h2><span class="note" id="sample-count"></span></div>
 <p class="note">每个样本独立；文字可编辑，按钮可操作。下方说明保留工具条被截断的完整信息。</p><div class="grid" id="samples"></div>
@@ -248,7 +248,7 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
 
   // 状态栏展示模型（纯函数）
   // - warn：需要红色提醒（当前佩戴已不划算 / 潘多拉约束未满足）
-  // - target：建议切换到的徽章；unequip：建议摘下的徽章（二者互斥）
+  // - actions：建议的动作（切换 1–2 个最优解，或摘下 1 枚），每项含 label/title
   // - pand：可选的 pandoraEffect(box) 结果；潘多拉事件优先于徽章逻辑
   function barModel(len, p, eq, pand) {
     const base = baseCost(len);
@@ -258,11 +258,7 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
       status: '',
       hint: '',
       warn: false,
-      target: null,
-      targets: [],
-      unequip: null,
       actions: [],
-      btn: '',
     };
 
     // 0) 潘多拉事件接管：徽章无法佩戴 / 费用被固定或免除时，不再给任何徽章动作
@@ -304,9 +300,12 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
     if (worn.length > 1) {
       const keep = worn.reduce((a, b) => (badgeCost(len, b) < badgeCost(len, a) ? b : a));
       const drop = worn.find((b) => b !== keep) || worn[worn.length - 1];
-      m.unequip = drop;
-      m.btn = `摘下 ${drop.badge.name}（同戴费用存疑）`;
-      m.actions = [{ type: 'unequip', badge: drop, label: m.btn, title: `摘下「${drop.badge.name}」` }];
+      m.actions = [{
+        type: 'unequip',
+        badge: drop,
+        label: `摘下 ${drop.badge.name}（同戴费用存疑）`,
+        title: `摘下「${drop.badge.name}」`,
+      }];
       m.hint = '⚠️ 多枚同戴，估算可能不准';
       m.warn = true;
       return finishPandora(m, len, pe, k);
@@ -314,9 +313,12 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
 
     // 2) 戴着的徽章比不戴还贵：建议摘下（站点存在恒定 10 金币的固定徽章，同价则不算贵）
     if (cur && curCost > base) {
-      m.unequip = cur;
-      m.btn = `摘下 ${cur.badge.name}（省 ${scale(curCost - base)} 金币）`;
-      m.actions = [{ type: 'unequip', badge: cur, label: m.btn, title: `摘下「${cur.badge.name}」` }];
+      m.actions = [{
+        type: 'unequip',
+        badge: cur,
+        label: `摘下 ${cur.badge.name}（省 ${scale(curCost - base)} 金币）`,
+        title: `摘下「${cur.badge.name}」`,
+      }];
       m.hint = `⚠️ 比不戴贵 ${scale(curCost - base)} 金币`;
       m.warn = true;
       return finishPandora(m, len, pe, k);
@@ -332,7 +334,6 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
     // 4) 算出最优解：只给最优的那几枚各一个按钮（并重徽章二选一，最多两个），
     //    比最优更贵的候选不再作为参考展示
     const targets = optimalBadges(len, p).filter((b) => !worn.includes(b)).slice(0, 2);
-    m.targets = targets;
     m.actions = targets.map((b) => {
       const cost = scale(badgeCost(len, b));
       return {
@@ -342,8 +343,6 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
         title: `切换到「${b.badge.name}」 · 发评约 ${cost} 金币`,
       };
     });
-    m.target = targets[0] || null;
-    m.btn = m.actions.length ? m.actions[0].label : '';
     const curOff = cur ? commentDiscount(cur) : null;
     if (curOff != null && commentDiscount(best) == null) {
       // 减免输给固定扣费：把「减免 30% 不如固定 8 金币」的原因说清楚
@@ -585,9 +584,8 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
     setStyle(countEl, 'fontWeight', model.warn ? '600' : '');
     setText(statusEl, model.status);
     statusEl.title = [model.status, model.hint].filter(Boolean).join(' · ');
-    const canAct = !!(model.actions && model.actions.length);
     // 单行省略后长文案可能被截断，把完整内容放进 title，鼠标悬停仍能看到
-    const hintText = model.hint + (canAct ? ' · Alt+B 切换' : '');
+    const hintText = model.hint;
     setText(hintEl, hintText);
     hintEl.title = hintText;
     setStyle(hintEl, 'color', model.warn
@@ -698,5 +696,5 @@ const cases=[
 for(const [title,description,opts]of cases){const card=document.createElement('article');card.className='sample';const h=document.createElement('h3');h.textContent=title;const p=document.createElement('p');p.textContent=description;const body=document.createElement('div');body.className='sample-body';if(opts.width)body.style.width=opts.width;const summary=document.createElement('p');summary.className='summary';card.append(h,p,body,summary);document.querySelector('#samples').append(card);makeRecord(body,{...opts,summary})}
 document.querySelector('#sample-count').textContent=cases.length+' 个独立样本';
 const modal=makeRecord(document.querySelector('#dialog-editor'),{len:101});const dialog=document.querySelector('#post-dialog');document.querySelector('#open-dialog').onclick=()=>{dialog.showModal();activeRecord=modal};document.querySelector('#close-dialog').onclick=()=>dialog.close();
-document.addEventListener('keydown',e=>{if(!e.altKey||e.key.toLowerCase()!=='b')return;e.preventDefault();const r=activeRecord;if(!r||r.busy)return;const m=barModel(r.input.value.length,r.pair,r.eq,r.event);if(m.target)switchTo(m.target);else if(m.unequip)unequip(m.unequip);else toast(r.event.lockBadge?'潘多拉锁定中':'当前无需切换')});
+
 </script></html>
