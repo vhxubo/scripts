@@ -179,7 +179,7 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
   // 每个盒子只携带一个事件，因此各标志互斥；未生效返回 { active: false }
   // - badge_drop_lock 回归起点：徽章全部掉落且锁定，无法佩戴 → 徽章逻辑完全让位
   // - fixed_text_cost 妙笔生花：发评费用固定为 N 金币 → 徽章不参与计费
-  // - comment_min_length 多说多写：gold 档「评论不扣除金币」→ 免费发评；各档要求 ≥N 字，未达不能发送
+  // - comment_min_length 多说多写：只校验字数，未达不能发送；徽章不参与计算，gold 档「评论不扣除金币」
   // - coin_modifier_percent 金币升降机：大部分金币变动 ±N%；
   //   官方 COINS_MODIFIER_IMMUNE_REASONS 豁免清单不含发帖/评论扣费 → 费用估算需乘算
   // - comment_custom_emoji_required 小表情：评论需包含自定义表情
@@ -267,6 +267,17 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
         }
         return m;
       }
+      // 多说多写（只有字数门槛的档位）：只盯字数，徽章不参与，也不展示切换
+      if (pe.minLength) {
+        m.status = `潘多拉「${pe.name}」生效中 · 需 ≥${pe.minLength} 字`;
+        if (needMore) {
+          m.hint = `⚠️ 还差 ${needMore} 字才能发送（需 ≥${pe.minLength} 字）`;
+          m.warn = true;
+        } else {
+          m.hint = `✓ 已满足 ${pe.minLength} 字，可以发送`;
+        }
+        return m;
+      }
       if (typeof pe.fixedCost === 'number') {
         m.status = `潘多拉「${pe.name}」生效中 · 发评固定 ${pe.fixedCost} 金币`;
         m.hint = '潘多拉已固定费用，徽章不参与计算';
@@ -294,7 +305,7 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
     if (worn.length > 1) {
       m.hint = '⚠️ 多枚同戴，估算可能不准';
       m.warn = true;
-      return finishPandora(m, len, pe);
+      return finishPandora(m, pe);
     }
 
     // 2) 最优解里除去当前佩戴的那枚，剩下的都可以替换：
@@ -307,7 +318,7 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
       } else {
         m.hint = cur ? '✓ 当前最省' : '';
       }
-      return finishPandora(m, len, pe);
+      return finishPandora(m, pe);
     }
 
     // 3) 只给最优解的替换按钮（并重徽章最多两个），比最优更贵的候选不展示
@@ -332,20 +343,13 @@ function eventEffect(key){const [name,data]=events[key];return data?{active:true
     } else {
       m.hint = `可省 ${curCost - targetCost} 金币`;
     }
-    return finishPandora(m, len, pe);
+    return finishPandora(m, pe);
   }
 
-  // 徽章分支收尾：费用类潘多拉已在前面接管，这里只叠加字数/表情约束
-  function finishPandora(m, len, pe) {
+  // 徽章分支收尾：费用类/字数类潘多拉已在前面接管，这里只叠加表情约束
+  function finishPandora(m, pe) {
     if (!pe) return m;
-    const tags = [];
-    if (pe.minLength && len < pe.minLength) {
-      // 发不出去比省几金币更重要：用发送门槛顶掉徽章提示
-      m.hint = `⚠️ 还差 ${pe.minLength - len} 字才能发送（需 ≥${pe.minLength} 字）`;
-      m.warn = true;
-    }
-    if (pe.needEmoji) tags.push('潘多拉要求包含自定义表情');
-    if (tags.length) m.hint = [m.hint, tags.join(' · ')].filter(Boolean).join(' · ');
+    if (pe.needEmoji) m.hint = [m.hint, '潘多拉要求包含自定义表情'].filter(Boolean).join(' · ');
     return m;
   }
 
@@ -665,7 +669,7 @@ const cases=[
 ['只有一枚费用徽章','仍能推荐比不佩戴更省的候选。',{pair:{fixed:[F],percent:[]},eq:new Set()}],
 ['佩戴后反而更贵','费用高于基础阶梯时红字提醒，不再提供摘下。',{pair:{fixed:[badge('costly','高费用徽章',{comment_cost:20})],percent:[]},eq:new Set(['costly'])}],
 ['相同费用','同价时把另一枚展示出来，换不换都是 7 金币。',{pair:{fixed:[badge('equal','固定 7 金币',{comment_cost:7})],percent:[P]},eq:new Set(['equal'])}],
-...Object.keys(events).filter(k=>k!=='none').map(k=>['潘多拉 · '+events[k][0],(k==='up'||k==='down')?'评论消费类事件优先：徽章不叠加，费用只按事件 ±% 计。':(k==='min'||k==='free')?'多说多写未满 100 字不能发送，字数够了才谈费用。':'事件优先级及评论约束提示。',{event:eventEffect(k),len:36}]),
+...Object.keys(events).filter(k=>k!=='none').map(k=>['潘多拉 · '+events[k][0],(k==='up'||k==='down')?'评论消费类事件优先：徽章不叠加，费用只按事件 ±% 计。':(k==='min'||k==='free')?'多说多写只校验字数：徽章不参与，也不展示切换。':'事件优先级及评论约束提示。',{event:eventEffect(k),len:36}]),
 ...[100,101,1000,1001,2000,2001,5000,5001].map(n=>['基础费用 · '+n+' 字','无费用徽章时的字数阶梯边界。',{len:n,pair:{fixed:[],percent:[]},eq:new Set(),activity:null}]),
 ['320 px · 短文案','模拟窄屏，隐藏次要提示并保留状态悬停全文。',{width:'320px'}],
 ['375 px · 已佩戴','短文案仍保留勾选与浅色底状态。',{width:'375px',eq:new Set(['a'])}],
